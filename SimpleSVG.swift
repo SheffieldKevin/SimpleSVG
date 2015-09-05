@@ -611,6 +611,31 @@ class MoveToPathCommand : PathCommand {
 
 }
 
+class LineToPathCommand : PathCommand {
+  var args : [CGPoint] = []
+  let command = CommandType.LineTo
+  let relative : Bool
+  required init(command : Character, arguments : [Float])
+  {
+    relative = command == "l"
+    for var i = 0; i < arguments.count; i += 2 {
+      args.append(CGPoint(x: arguments[i], y: arguments[i+1]))
+    }
+  }
+  func executeCommand(context : CGContextRef, var currentPoint : CGPoint) -> CGPoint {
+    // Draw lines for the remaining points
+    for point in args {
+      if relative {
+        currentPoint = currentPoint + point
+      } else {
+        currentPoint = point
+      }
+      CGContextAddLineToPoint(context, currentPoint.x, currentPoint.y)
+    }
+    return currentPoint
+  }
+}
+
 class CurveToPathCommand : PathCommand {
   var args : [(to: CGPoint, controlStart: CGPoint, controlEnd: CGPoint)] = []
   let command = CommandType.CurveTo
@@ -722,6 +747,8 @@ func commandToPathCommand(command : Character, arguments : [Float]) -> PathComma
     return VerticalLinePathCommand(command: command, arguments: arguments)
   case .ClosePath:
     return ClosePathCommand(command: command, arguments: arguments)
+  case .LineTo:
+    return LineToPathCommand(command: command, arguments: arguments)
   default:
     fatalError()
   }
