@@ -367,9 +367,16 @@ class Ellipse : Path {
 }
 
 class PolyLine : Path {
-  override func drawToContext(context: CGContextRef) {
-    fatalError()
+  var points : [CGPoint] {
+    return attributes["points"] as? [CGPoint] ?? []
   }
+  override func drawToContext(context: CGContextRef) {
+    var pts = points
+    CGContextAddLines(context, &pts, pts.count)
+    handleStrokeAndFill(context)
+    
+  }
+
 }
 
 /// Extension to handle stroke and fill for any PresentationElement objects

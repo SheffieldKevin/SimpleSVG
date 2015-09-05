@@ -21,4 +21,4 @@ build/
 # .perspectivev3: http://stackoverflow.com/questions/5223297/xcode-projects-what-is-a-perspectivev3-file
 *.perspectivev3
 xcuserdata/
-
+project.xcworkspace/
