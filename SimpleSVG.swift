@@ -227,6 +227,7 @@ protocol PresentationElement {
 class SVGElement {
   var id : String? { return attributes["id"] as? String }
   var attributes : [String : Any] = [:]
+  var sourceLine : UInt = 0
 }
 
 /// Used for unknown elements encountered whilst parsing
@@ -245,6 +246,9 @@ class SVGGroup : SVGElement, ContainerElement, SVGDrawable {
   func drawToContext(context: CGContextRef) {
     // Loop over all children and draw
     for child in children.filter({ $0 is SVGDrawable }).map({ $0 as! SVGDrawable }) {
+      if let pres = child as? PresentationElement {
+        if pres.isInvisible() { continue }
+      }
       child.drawToContext(context)
     }
   }
@@ -266,6 +270,9 @@ class SVGContainer : SVGElement, ContainerElement {
   func drawToContext(context: CGContextRef) {
     // Loop over all children and draw
     for child in children.filter({ $0 is SVGDrawable }).map({ $0 as! SVGDrawable }) {
+      if let pres = child as? PresentationElement {
+        if pres.isInvisible() { continue }
+      }
       child.drawToContext(context)
     }
   }
@@ -381,6 +388,19 @@ class PolyLine : Path {
 
 /// Extension to handle stroke and fill for any PresentationElement objects
 extension PresentationElement {
+  func isInvisible() -> Bool {
+    if (self as! SVGElement).sourceLine == 51 {
+      print(51)
+    }
+    let hasStroke = (stroke ?? .None)  != .None && strokeWidth.value != 0
+    let hasFill =   (fill ?? .Inherit) != .None
+    
+    if hasStroke || hasFill {
+      return false
+    }
+    return true
+  }
+  
   /// Handles generic stroke and fill for this element
   func handleStrokeAndFill(context : CGContextRef) {
     var mode : CGPathDrawingMode? = nil
@@ -444,11 +464,25 @@ struct Length : FloatLiteralConvertible, IntegerLiteralConvertible {
 }
 
 /// Handles entries for a painting entry type
-enum Paint {
+enum Paint : Equatable {
   case None
   case CurrentColor
   case Color(CGColor)
   case Inherit
+}
+
+func ==(a : Paint, b : Paint) -> Bool {
+  switch (a, b) {
+  case (.None, .None):
+    return true
+  case (.CurrentColor, .CurrentColor):
+    return true
+  case (.Inherit, .Inherit):
+    return true
+  case (.Color(let a), .Color(let b)):
+    return CGColorEqualToColor(a, b)
+  default: return false
+  }
 }
 
 /// Parse a <length> entry
@@ -518,6 +552,7 @@ class Parser : NSObject, NSXMLParserDelegate {
     } else {
       element = SVGUnknownElement(name: elementName)
     }
+    element.sourceLine = UInt(parser.lineNumber)
     
     for (key, value) in attributeDict {
       if let parser = getParserFor(elementName, attr: key) {

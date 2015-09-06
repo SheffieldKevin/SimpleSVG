@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		0A11778D1B9C471300FD8CA8 /* RPM_NavBall_Overlay.svg in Resources */ = {isa = PBXBuildFile; fileRef = 0A11778C1B9C471300FD8CA8 /* RPM_NavBall_Overlay.svg */; settings = {ASSET_TAGS = (); }; };
 		0A3A77D81B9B619400DB206B /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A3A77D71B9B619400DB206B /* AppDelegate.swift */; };
 		0A3A77DA1B9B619400DB206B /* ViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A3A77D91B9B619400DB206B /* ViewController.swift */; };
 		0A3A77DD1B9B619400DB206B /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 0A3A77DB1B9B619400DB206B /* Main.storyboard */; };
@@ -19,6 +20,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		0A11778C1B9C471300FD8CA8 /* RPM_NavBall_Overlay.svg */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.xml; path = RPM_NavBall_Overlay.svg; sourceTree = "<group>"; };
 		0A3A77D41B9B619400DB206B /* SimpleSVGTestApplication.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SimpleSVGTestApplication.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		0A3A77D71B9B619400DB206B /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		0A3A77D91B9B619400DB206B /* ViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewController.swift; sourceTree = "<group>"; };
@@ -62,6 +64,7 @@
 		0A3A77D61B9B619400DB206B /* TestApplication */ = {
 			isa = PBXGroup;
 			children = (
+				0A11778C1B9C471300FD8CA8 /* RPM_NavBall_Overlay.svg */,
 				0A9B97081B9B7A1600995795 /* test_image2.svg */,
 				0ADFA24D1B9B632300512C0F /* test_image.svg */,
 				0A99CC9F1B9B61D600434D96 /* SimpleSVG.swift */,
@@ -137,6 +140,7 @@
 				0A3A77E21B9B619400DB206B /* LaunchScreen.storyboard in Resources */,
 				0A9B97091B9B7A1600995795 /* test_image2.svg in Resources */,
 				0A3A77DF1B9B619400DB206B /* Assets.xcassets in Resources */,
+				0A11778D1B9C471300FD8CA8 /* RPM_NavBall_Overlay.svg in Resources */,
 				0A3A77DD1B9B619400DB206B /* Main.storyboard in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
