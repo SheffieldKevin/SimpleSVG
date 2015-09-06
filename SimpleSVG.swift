@@ -244,6 +244,8 @@ class SVGGroup : SVGElement, ContainerElement, SVGDrawable {
   var display : String { return (attributes["display"] ?? "") as? String ?? "inline" }
   
   func drawToContext(context: CGContextRef) {
+    if display == "none" { return }
+
     // Loop over all children and draw
     for child in children.filter({ $0 is SVGDrawable }).map({ $0 as! SVGDrawable }) {
       if let pres = child as? PresentationElement {
@@ -572,11 +574,7 @@ class Parser : NSObject, NSXMLParserDelegate {
     namespaceURI: String?, qualifiedName qName: String?)
   {
     let removed = elements.removeLast()
-    // If a group and hidden, remove from the parent
-    if removed is SVGGroup && (removed as! SVGGroup).display == "none" {
-      var elem = (elements.last! as! ContainerElement)
-      elem.children.removeLast()
-    }
+
     // Remember the last element we removed, so we don't discard the end result
     lastElementToRemove = removed
   }
