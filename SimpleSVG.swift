@@ -20,6 +20,10 @@
 
 import Foundation
 import CoreGraphics
+import GLKit
+
+typealias SVGPoint = GLKVector3
+typealias SVGMatrix = GLKMatrix3
 
 /// The public face of the module. Loads an SVGFile and has options for rendering
 public class SVGImage {
@@ -33,10 +37,15 @@ public class SVGImage {
   }
   
   public func drawToContext(context : CGContextRef) {
-    svg.drawToContext(context)
+    svg.drawToContext(context, state: SVGState())
+  }
+  
+  public func drawIdToContext(context : CGContextRef, id : String) {
+    let elem = svg.findWithID(id)
+    let boundingBox = elem?.boundingBox
+    elem?.drawToContext(context, state: SVGState())
   }
 }
-
 
 /// A function that will take an XML attribute entry and convert it
 private typealias Converter = (String) -> Any
@@ -50,6 +59,7 @@ private let parserMap : [String : Converter] = [
   "<paint>":  parsePaint,
   "<path-data>": parsePath,
   "<list-of-points>": parseListOfPoints,
+  "<transform>": parseTransform,
 ]
 
 /// Which attribute names hold which different data types
@@ -59,6 +69,7 @@ private let dataTypesForAttributeNames : [String:[String]] = [
   "<coord>": ["x", "y", "cx", "cy", "x1", "y1", "x2", "y2"],
   "<list-of-points>": ["points"],
   "<path-data>": ["d"],
+  "<transform>": ["transform"],
 ]
 
 /// Which SVG entity to create for a particular XML tag name
@@ -85,8 +96,6 @@ private func getParserFor(elem: String, attr : String) -> Converter? {
   }
   return nil
 }
-
-// MARK: Extensions and utility functions for Quartz types
 
 // SVG Color names
 private let svgColorNames = [
@@ -168,7 +177,7 @@ private let svgColorNames = [
 
 /// Converts a string in CSS2 form to a CGColor. See
 /// http://www.w3.org/TR/SVG/types.html#DataTypeColor
-private func CGColorCreateFromString(string : String) -> CGColor? {
+private func CGColorCreateFromString(string : String) -> CGColor? {     
   // Look in the color string table for an entry for this
   let colorString = svgColorNames[string] == nil ? string : svgColorNames[string]!
   // Handle either "rgb(..." or "#XXX..." strings
@@ -204,11 +213,28 @@ private func CGColorCreateFromString(string : String) -> CGColor? {
 // MARK: SVG Element classes
 
 protocol SVGDrawable {
-  func drawToContext(context : CGContextRef)
+  func drawToContext(context : CGContextRef, state: SVGState)
+  var boundingBox : CGRect? { get }
 }
 
 protocol ContainerElement : SVGDrawable {
   var children : [SVGElement] { get mutating set }
+}
+
+extension ContainerElement {
+  var boundingBox : CGRect? {
+    // Unify all the child bounding boxes
+    let xf = (self as? SVGTransformable)?.transform ?? SVGMatrix.Identity
+    
+    var boundingBox : CGRect? = nil
+    for child in children.filter({ $0 is SVGDrawable }).map({ $0 as! SVGDrawable }) {
+      guard let childBox = child.boundingBox else {
+        continue
+      }
+      boundingBox = boundingBox ∪? childBox
+    }
+    return boundingBox
+  }
 }
 
 protocol PresentationElement {
@@ -217,7 +243,31 @@ protocol PresentationElement {
   var fill : Paint? { get }
   var stroke : Paint? { get }
   var strokeWidth : Length { get }
+  var miterLimit : Float { get }
 }
+
+/// State object passed down amongst transformational elements
+struct SVGState {
+  var transform = SVGMatrix.Identity
+  
+  func applyTransform(transform : SVGMatrix) -> SVGState {
+    return SVGState(transform: GLKMatrix3Multiply(self.transform, transform))
+  }
+}
+
+// Basic SVG Protocols
+
+protocol SVGTransformable {
+  var transform : SVGMatrix { get }
+}
+extension Path : SVGTransformable {
+  var transform : SVGMatrix { return attributes["transform"] as? SVGMatrix ?? SVGMatrix.Identity }
+}
+extension SVGGroup : SVGTransformable {
+  var transform : SVGMatrix { return attributes["transform"] as? SVGMatrix ?? SVGMatrix.Identity }
+}
+// Transformable: ‘circle’ ‘ellipse’,‘line’, ‘path’, ‘polygon’, ‘polyline’, ‘rect’, ‘g’,
+//‘a’, ‘clipPath’, ‘defs’, ‘foreignObject’, ‘image’,  ‘switch’, ‘text’, ‘use’
 
 // The base class for any physical elements
 class SVGElement {
@@ -234,20 +284,28 @@ class SVGUnknownElement : SVGElement {
   }
 }
 
+extension SVGMatrix {
+  static var Identity : SVGMatrix { return GLKMatrix3Identity }
+}
+
 /// An SVG element that can contain other SVG elements. For e.g. svg, g, defs
 class SVGGroup : SVGElement, ContainerElement, SVGDrawable {
   var children : [SVGElement] = []
   var display : String { return (attributes["display"] ?? "") as? String ?? "inline" }
-  
-  func drawToContext(context: CGContextRef) {
+  var drawableChildren : [SVGDrawable] {
+    return children.filter({ $0 is SVGDrawable }).map({ $0 as! SVGDrawable })
+  }
+  func drawToContext(context: CGContextRef, state: SVGState) {
     if display == "none" { return }
-
+    
+    let subState = state.applyTransform(self.transform)
+    
     // Loop over all children and draw
-    for child in children.filter({ $0 is SVGDrawable }).map({ $0 as! SVGDrawable }) {
+    for child in drawableChildren {
       if let pres = child as? PresentationElement {
         if pres.isInvisible() { continue }
       }
-      child.drawToContext(context)
+      child.drawToContext(context, state: subState)
     }
   }
 }
@@ -255,6 +313,7 @@ class SVGGroup : SVGElement, ContainerElement, SVGDrawable {
 /// The root element of any SVG file
 class SVGContainer : SVGElement, ContainerElement {
   var children : [SVGElement] = []
+  private var idMap : [String : SVGElement] = [:]
   
   var width : Length {  return attributes["width"] as! Length }
   var height : Length { return attributes["height"] as! Length }
@@ -265,14 +324,18 @@ class SVGContainer : SVGElement, ContainerElement {
     attributes["height"] = Length(value: 100, unit: .pc)
   }
   
-  func drawToContext(context: CGContextRef) {
+  func drawToContext(context: CGContextRef, state: SVGState) {
     // Loop over all children and draw
     for child in children.filter({ $0 is SVGDrawable }).map({ $0 as! SVGDrawable }) {
       if let pres = child as? PresentationElement {
         if pres.isInvisible() { continue }
       }
-      child.drawToContext(context)
+      child.drawToContext(context, state: state)
     }
+  }
+  
+  func findWithID(id : String) -> SVGDrawable? {
+    return idMap[id] as? SVGDrawable
   }
 }
 
@@ -281,12 +344,13 @@ class Path : SVGElement, SVGDrawable, PresentationElement {
   var fill : Paint? { return attributes["fill"] as? Paint }
   var stroke : Paint? { return attributes["stroke"] as? Paint }
   var strokeWidth : Length { return attributes["stroke-width"] as? Length ?? 1}
+  var miterLimit : Float { return Float(attributes["stroke-miterlimit"] as? String ?? "4")! }
   
   var d : [PathInstruction] {
     return attributes["d"] as? [PathInstruction] ?? []
   }
   
-  func drawToContext(context : CGContextRef)
+  func drawToContext(context : CGContextRef, state: SVGState)
   {
     guard d.count > 0 else {
       print("Warning: Path with no data from line \(sourceLine)")
@@ -309,6 +373,27 @@ class Path : SVGElement, SVGDrawable, PresentationElement {
     }
     handleStrokeAndFill(context)
   }
+  
+  var boundingBox : CGRect? {
+    var box : CGRect? = nil
+    for command in d {
+      switch command {
+      case .MoveTo(let to):
+        box = box ∪? to
+      case .LineTo(let to):
+        box = box ∪? to
+      case .CurveTo(let to, let controlStart, let controlEnd):
+        box = box ∪? to ∪? controlStart ∪? controlEnd
+      case .EllipticalArc(let data):
+        box = box ∪? data.to
+      case .ClosePath:
+        break
+      default:
+        fatalError()
+      }
+    }
+    return box
+  }
 }
 
 /// Represents a circle element in the SVG file
@@ -320,10 +405,14 @@ class Circle : Path {
     return CGPointMake(CGFloat(x?.value ?? 0), CGFloat(y?.value ?? 0))
   }
   
-  override func drawToContext(context: CGContextRef) {
+  override func drawToContext(context: CGContextRef, state: SVGState) {
     CGContextAddEllipseInRect(context,
       CGRect(x: center.x-radius, y: center.y-radius, width: radius*2, height: radius*2))
     handleStrokeAndFill(context)
+  }
+  
+  override var boundingBox : CGRect? {
+    return CGRectMake(center.x-radius, center.y-radius, 2*radius, 2*radius)
   }
 }
 
@@ -339,10 +428,14 @@ class Line : Path {
     return CGPoint(x: x?.value ?? 0, y: y?.value ?? 0)
   }
   
-  override func drawToContext(context: CGContextRef) {
+  override func drawToContext(context: CGContextRef, state: SVGState) {
     var points = [start, end]
     CGContextAddLines(context, &points, 2)
     handleStrokeAndFill(context)
+  }
+  
+  override var boundingBox : CGRect? {
+    return CGRectMake(start.x, start.y, 0, 0) ∪ end
   }
 }
 
@@ -350,12 +443,16 @@ class Polygon : Path {
   var points : [CGPoint] {
     return attributes["points"] as? [CGPoint] ?? []
   }
-  override func drawToContext(context: CGContextRef) {
+  override func drawToContext(context: CGContextRef, state: SVGState) {
     var pts = points
     CGContextAddLines(context, &pts, pts.count)
     CGContextClosePath(context)
     handleStrokeAndFill(context)
-    
+  }
+  
+  override var boundingBox : CGRect? {
+    let start = CGRectMake(points[0].x, points[0].y, 0, 0)
+    return points.reduce(start, combine: { $0 ∪ $1 })
   }
 }
 
@@ -368,14 +465,21 @@ class Rect : Path {
     return CGRect(x: x?.value ?? 0, y: y?.value ?? 0, width: width?.value ?? 0, height: height?.value ?? 0)
   }
   
-  override func drawToContext(context: CGContextRef) {
+  override func drawToContext(context: CGContextRef, state: SVGState) {
     CGContextAddRect(context, rect)
     handleStrokeAndFill(context)
+  }
+
+  override var boundingBox : CGRect? {
+    return rect
   }
 }
 
 class Ellipse : Path {
-  override func drawToContext(context: CGContextRef) {
+  override func drawToContext(context: CGContextRef, state: SVGState) {
+    fatalError()
+  }
+  override var boundingBox : CGRect? {
     fatalError()
   }
 }
@@ -384,23 +488,31 @@ class PolyLine : Path {
   var points : [CGPoint] {
     return attributes["points"] as? [CGPoint] ?? []
   }
-  override func drawToContext(context: CGContextRef) {
+  override func drawToContext(context: CGContextRef, state: SVGState) {
     var pts = points
     CGContextAddLines(context, &pts, pts.count)
     handleStrokeAndFill(context)
   }
 
+  override var boundingBox : CGRect? {
+    let start = CGRectMake(points[0].x, points[0].y, 0, 0)
+    return points.reduce(start, combine: { $0 ∪ $1 })
+  }
 }
 
 /// Extension to handle stroke and fill for any PresentationElement objects
 extension PresentationElement {
+  var hasStroke : Bool {
+    return (stroke ?? .None)  != .None && strokeWidth.value != 0
+  }
+  var hasFill : Bool {
+    return (fill ?? .Inherit) != .None
+  }
+  
   func isInvisible() -> Bool {
-    if (self as! SVGElement).sourceLine == 51 {
-      print(51)
-    }
-    let hasStroke = (stroke ?? .None)  != .None && strokeWidth.value != 0
-    let hasFill =   (fill ?? .Inherit) != .None
-    
+//    let hasStroke = (stroke ?? .None)  != .None && strokeWidth.value != 0
+//    let hasFill =   (fill ?? .Inherit) != .None
+//    
     if hasStroke || hasFill {
       return false
     }
@@ -434,7 +546,6 @@ extension PresentationElement {
       fatalError()
     }
     if let m = mode {
-      print("Handling path with mode ", m)
       CGContextDrawPath(context, m)
     }
   }
@@ -528,11 +639,21 @@ func parseListOfPoints(entry : String) -> Any {
   return floatsToPoints(parts.map({Float($0)!}))
 }
 
+
+func parseTransform(entry: String) -> Any {
+  guard entry.isEmpty else {
+    print("Warning: Cannot parse transform \(entry)")
+    return SVGMatrix.Identity
+  }
+  return SVGMatrix.Identity
+}
+
 /// Main XML Parser
 class Parser : NSObject, NSXMLParserDelegate {
   
   var parser : NSXMLParser
   var elements : [SVGElement] = []
+  private var idObjects : [String : SVGElement] = [:]
   
   init(data : NSData) {
     parser = NSXMLParser(data: data)
@@ -541,7 +662,11 @@ class Parser : NSObject, NSXMLParserDelegate {
   }
   
   func parse() -> SVGElement {
+    idObjects = [:]
     parser.parse()
+    if let elem = lastElementToRemove as? SVGContainer {
+      elem.idMap = idObjects
+    }
     return lastElementToRemove!
   }
   
@@ -568,6 +693,9 @@ class Parser : NSObject, NSXMLParserDelegate {
       ce.children.append(element)
     }
     
+    if let id = element.id {
+      idObjects[id] = element
+    }
     elements.append(element)
   }
   
@@ -596,6 +724,7 @@ enum PathInstruction {
   case SmoothCurveTo(to: CGPoint, controlEnd: CGPoint)
   case QuadraticBezier(to: CGPoint, control: CGPoint)
   case SmoothQuadraticBezier(to: CGPoint)
+  case EllipticalArc(to: CGPoint, radius: CGPoint, xAxisRotation: Float, largeArc: Bool, sweep: Bool)
 }
 
 /// Convert an even list of floats to CGPoints
@@ -662,6 +791,17 @@ func parsePath(data: String) -> Any { // -> [PathInstruction]
     case "z":
       commands.append(.ClosePath)
       currentPoint = currentSubpathStart
+    case "a":
+      for args in args.groupByStride(7) {
+        let plainTo = CGPointMake(CGFloat(args[5]), CGFloat(args[6]))
+        let to = relative ? currentPoint + plainTo : plainTo
+        let radius = CGPointMake(CGFloat(args[0]), CGFloat(args[1]))
+        let largeArcFlag = args[3] != 0
+        let sweepFlag = args[4] != 0
+        commands.append(.EllipticalArc(to: to, radius: radius, xAxisRotation: args[2], largeArc: largeArcFlag, sweep: sweepFlag))
+      }
+      
+      //      (rx ry x-axis-rotation large-arc-flag sweep-flag x y)+
     default:
       fatalError()
     }
@@ -692,6 +832,41 @@ extension CGRect {
     self.init(x: CGFloat(x), y: CGFloat(y), width: CGFloat(width), height: CGFloat(height))
   }
 }
+
+infix operator ∪ { associativity left }
+infix operator ∪? { associativity left }
+
+func ∪(left: CGRect, right: CGRect) -> CGRect {
+  return CGRectUnion(left, right)
+}
+func ∪(left: CGRect, right: CGPoint) -> CGRect {
+  return CGRectUnion(left, CGRectMake(right.x, right.y, 0, 0))
+}
+func ∪(right: CGPoint, left: CGRect) -> CGRect {
+  return CGRectUnion(left, CGRectMake(right.x, right.y, 0, 0))
+}
+func ∪?(left: CGRect?, right: CGRect?) -> CGRect? {
+  guard left != nil || right != nil else {
+    return nil
+  }
+  return CGRectUnion(left ?? right!, right ?? left!)
+}
+func ∪?(left: CGRect?, right: CGPoint) -> CGRect? {
+  let rRect = CGRectMake(right.x, right.y, 0, 0)
+  guard let l = left else {
+    return rRect
+  }
+  return CGRectUnion(l, rRect)
+}
+func ∪?(right: CGPoint, left: CGRect?) -> CGRect? {
+  let rRect = CGRectMake(right.x, right.y, 0, 0)
+  guard let l = left else {
+    return rRect
+  }
+  return CGRectUnion(l, rRect)
+}
+
+
 extension CGPoint {
   init(x: Float, y: Float) {
     self.init(x: CGFloat(x), y: CGFloat(y))

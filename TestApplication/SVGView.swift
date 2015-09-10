@@ -11,10 +11,16 @@ class SVGView : UIView {
   
   override func drawRect(rect: CGRect) {
     if svgFile == nil {
-      let sampleImage = NSBundle.mainBundle().URLForResource("RPM_NavBall_Overlay", withExtension: "svg")!
+//      let sampleImage = NSBundle.mainBundle().URLForResource("RPM_NavBall_Overlay", withExtension: "svg")!
+      let sampleImage = NSBundle.mainBundle().URLForResource("Markers", withExtension: "svg")!
+
       svgFile = SVGImage(withContentsOfFile: sampleImage)
+
+      // Generate triangles
+//      svgFile?.renderToTriangles()
     }
     if let context = UIGraphicsGetCurrentContext() {
+      svgFile?.drawIdToContext(context, id: "Prograde")
       svgFile?.drawToContext(context)
     }
   }
