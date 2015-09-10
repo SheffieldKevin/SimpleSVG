@@ -7,16 +7,16 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		0A11778D1B9C471300FD8CA8 /* RPM_NavBall_Overlay.svg in Resources */ = {isa = PBXBuildFile; fileRef = 0A11778C1B9C471300FD8CA8 /* RPM_NavBall_Overlay.svg */; settings = {ASSET_TAGS = (); }; };
+		0A11778D1B9C471300FD8CA8 /* RPM_NavBall_Overlay.svg in Resources */ = {isa = PBXBuildFile; fileRef = 0A11778C1B9C471300FD8CA8 /* RPM_NavBall_Overlay.svg */; };
 		0A3A77D81B9B619400DB206B /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A3A77D71B9B619400DB206B /* AppDelegate.swift */; };
 		0A3A77DA1B9B619400DB206B /* ViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A3A77D91B9B619400DB206B /* ViewController.swift */; };
 		0A3A77DD1B9B619400DB206B /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 0A3A77DB1B9B619400DB206B /* Main.storyboard */; };
 		0A3A77DF1B9B619400DB206B /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 0A3A77DE1B9B619400DB206B /* Assets.xcassets */; };
 		0A3A77E21B9B619400DB206B /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 0A3A77E01B9B619400DB206B /* LaunchScreen.storyboard */; };
-		0A99CCA01B9B61D600434D96 /* SimpleSVG.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A99CC9F1B9B61D600434D96 /* SimpleSVG.swift */; settings = {ASSET_TAGS = (); }; };
-		0A9B97091B9B7A1600995795 /* test_image2.svg in Resources */ = {isa = PBXBuildFile; fileRef = 0A9B97081B9B7A1600995795 /* test_image2.svg */; settings = {ASSET_TAGS = (); }; };
-		0ADFA24C1B9B625400512C0F /* SVGView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0ADFA24B1B9B625400512C0F /* SVGView.swift */; settings = {ASSET_TAGS = (); }; };
-		0ADFA24E1B9B632300512C0F /* test_image.svg in Resources */ = {isa = PBXBuildFile; fileRef = 0ADFA24D1B9B632300512C0F /* test_image.svg */; settings = {ASSET_TAGS = (); }; };
+		0A99CCA01B9B61D600434D96 /* SimpleSVG.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A99CC9F1B9B61D600434D96 /* SimpleSVG.swift */; };
+		0A9B97091B9B7A1600995795 /* test_image2.svg in Resources */ = {isa = PBXBuildFile; fileRef = 0A9B97081B9B7A1600995795 /* test_image2.svg */; };
+		0ADFA24C1B9B625400512C0F /* SVGView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0ADFA24B1B9B625400512C0F /* SVGView.swift */; };
+		0ADFA24E1B9B632300512C0F /* test_image.svg in Resources */ = {isa = PBXBuildFile; fileRef = 0ADFA24D1B9B632300512C0F /* test_image.svg */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -105,6 +105,7 @@
 		0A3A77CC1B9B619400DB206B /* Project object */ = {
 			isa = PBXProject;
 			attributes = {
+				LastSwiftUpdateCheck = 0710;
 				LastUpgradeCheck = 0700;
 				ORGANIZATIONNAME = "Nicholas Devenish";
 				TargetAttributes = {

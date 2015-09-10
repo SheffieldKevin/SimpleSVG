@@ -37,6 +37,7 @@ public class SVGImage {
   }
 }
 
+
 /// A function that will take an XML attribute entry and convert it
 private typealias Converter = (String) -> Any
 
@@ -47,7 +48,7 @@ private let parserMap : [String : Converter] = [
   "<length>": parseLength,
   "<coord>":  parseLength,
   "<paint>":  parsePaint,
-  "<path-data>": parsePathData,
+  "<path-data>": parsePath,
   "<list-of-points>": parseListOfPoints,
 ]
 
@@ -165,11 +166,6 @@ private let svgColorNames = [
   "lightgoldenrodyellow": "rgb(250, 250, 210)"
 ]
 
-// Easy references to common colors
-private extension CGColor {
-  static var Black : CGColor { return CGColorCreate(CGColorSpaceCreateDeviceRGB(), [0,0,0,1])! }
-}
-
 /// Converts a string in CSS2 form to a CGColor. See
 /// http://www.w3.org/TR/SVG/types.html#DataTypeColor
 private func CGColorCreateFromString(string : String) -> CGColor? {
@@ -286,21 +282,30 @@ class Path : SVGElement, SVGDrawable, PresentationElement {
   var stroke : Paint? { return attributes["stroke"] as? Paint }
   var strokeWidth : Length { return attributes["stroke-width"] as? Length ?? 1}
   
-  var d : [PathCommand] {
-    return attributes["d"] as? [PathCommand] ?? []
+  var d : [PathInstruction] {
+    return attributes["d"] as? [PathInstruction] ?? []
   }
   
   func drawToContext(context : CGContextRef)
   {
-    if (attributes["id"] as? String) == "somePath" {
-      print("I")
-    }
     guard d.count > 0 else {
-      fatalError("Path with no data")
+      print("Warning: Path with no data from line \(sourceLine)")
+      return
     }
-    var curPoint = CGPoint()
     for command in d {
-      curPoint = command.executeCommand(context, currentPoint: curPoint)
+      switch command {
+      case .MoveTo(let to):
+        CGContextMoveToPoint(context, to.x, to.y)
+      case .LineTo(let to):
+        CGContextAddLineToPoint(context, to.x, to.y)
+      case .CurveTo(let to, let controlStart, let controlEnd):
+        CGContextAddCurveToPoint(context, controlStart.x, controlStart.y,
+          controlEnd.x, controlEnd.y, to.x, to.y)
+      case .ClosePath:
+        CGContextClosePath(context)
+      default:
+        fatalError("Unrecognised path instruction: \(command)")
+      }
     }
     handleStrokeAndFill(context)
   }
@@ -308,11 +313,11 @@ class Path : SVGElement, SVGDrawable, PresentationElement {
 
 /// Represents a circle element in the SVG file
 class Circle : Path {
-  var radius : Float { return (attributes["r"] as? Length)?.value ?? 0 }
-  var center : SVGPoint {
+  var radius : CGFloat { return CGFloat((attributes["r"] as? Length)?.value ?? 0) }
+  var center : CGPoint {
     let x = attributes["cx"] as? Length
     let y = attributes["cy"] as? Length
-    return SVGPoint(x?.value ?? 0, y?.value ?? 0)
+    return CGPointMake(CGFloat(x?.value ?? 0), CGFloat(y?.value ?? 0))
   }
   
   override func drawToContext(context: CGContextRef) {
@@ -383,7 +388,6 @@ class PolyLine : Path {
     var pts = points
     CGContextAddLines(context, &pts, pts.count)
     handleStrokeAndFill(context)
-    
   }
 
 }
@@ -430,6 +434,7 @@ extension PresentationElement {
       fatalError()
     }
     if let m = mode {
+      print("Handling path with mode ", m)
       CGContextDrawPath(context, m)
     }
   }
@@ -520,11 +525,7 @@ func parseListOfPoints(entry : String) -> Any {
   let separating = NSMutableCharacterSet.whitespaceAndNewlineCharacterSet()
   separating.addCharactersInString(",")
   let parts = entry.componentsSeparatedByCharactersInSet(separating).filter { !$0.isEmpty }
-  var points : [CGPoint] = []
-  for var i = 0; i < parts.count; i += 2 {
-    points.append(CGPoint(x: Float(parts[i])!, y: Float(parts[i+1])!))
-  }
-  return points
+  return floatsToPoints(parts.map({Float($0)!}))
 }
 
 /// Main XML Parser
@@ -580,256 +581,110 @@ class Parser : NSObject, NSXMLParserDelegate {
   }
 }
 
-// MARK: Path parsing and rendering
+// MARK: Path parsing
 
 let pathSplitter = Regex(pattern: "([a-zA-z])([^a-df-zA-DF-Z]*)")
 let pathArgSplitter = Regex(pattern: "([+-]?\\d*\\.?\\d*(?:[eE][+-]?\\d+)?)\\s*,?\\s*")
 
-enum CommandType : Character {
-  case MoveTo = "m"
-  case ClosePath = "z"
-  case LineTo = "l"
-  case HLineTo = "h"
-  case VLineTo = "v"
-  case CurveTo = "c"
-  case SmoothCurveTo = "s"
-  case Quadratic = "q"
-  case SmoothQuadratic = "t"
-  case Elliptical = "a"
+enum PathInstruction {
+  case ClosePath
+  case MoveTo(CGPoint)
+  case LineTo(CGPoint)
+  case HLineTo(CGFloat)
+  case VLineTo(CGFloat)
+  case CurveTo(to: CGPoint, controlStart: CGPoint, controlEnd: CGPoint)
+  case SmoothCurveTo(to: CGPoint, controlEnd: CGPoint)
+  case QuadraticBezier(to: CGPoint, control: CGPoint)
+  case SmoothQuadraticBezier(to: CGPoint)
 }
 
-struct SVGPoint {
-  var x : Float
-  var y : Float
-  init(_ x: Float, _ y: Float) {
-    self.x = x
-    self.y = y
-  }
-}
-
-protocol PathCommand {
-  func executeCommand(context : CGContextRef, currentPoint : CGPoint) -> CGPoint
-  
-  var command : CommandType { get }
-  var relative : Bool { get }
-  init(command: Character, arguments: [Float])
-}
-
-class MoveToPathCommand : PathCommand {
-  var args : [CGPoint] = []
-  let command = CommandType.MoveTo
-  let relative : Bool
-  required init(command : Character, arguments : [Float])
-  {
-    relative = command == "m"
-    for var i = 0; i < arguments.count; i += 2 {
-      args.append(CGPoint(x: arguments[i], y: arguments[i+1]))
-    }
-  }
-  func executeCommand(context : CGContextRef, var currentPoint : CGPoint) -> CGPoint {
-    var points = args
-    let firstPoint = points.removeFirst()
-    if relative {
-      currentPoint = firstPoint + currentPoint
-    } else {
-      currentPoint = firstPoint
-    }
-    CGContextMoveToPoint(context, currentPoint.x, currentPoint.y)
-    
-    // Draw lines for the remaining points
-    for point in points {
-//      let endPoint : CGPoint
-      if relative {
-        currentPoint = currentPoint + point
-      } else {
-        currentPoint = point
-      }
-      CGContextAddLineToPoint(context, currentPoint.x, currentPoint.y)
-    }
-    return currentPoint
-  }
-
-}
-
-class LineToPathCommand : PathCommand {
-  var args : [CGPoint] = []
-  let command = CommandType.LineTo
-  let relative : Bool
-  required init(command : Character, arguments : [Float])
-  {
-    relative = command == "l"
-    for var i = 0; i < arguments.count; i += 2 {
-      args.append(CGPoint(x: arguments[i], y: arguments[i+1]))
-    }
-  }
-  func executeCommand(context : CGContextRef, var currentPoint : CGPoint) -> CGPoint {
-    // Draw lines for the remaining points
-    for point in args {
-      if relative {
-        currentPoint = currentPoint + point
-      } else {
-        currentPoint = point
-      }
-      CGContextAddLineToPoint(context, currentPoint.x, currentPoint.y)
-    }
-    return currentPoint
-  }
-}
-
-class CurveToPathCommand : PathCommand {
-  var args : [(to: CGPoint, controlStart: CGPoint, controlEnd: CGPoint)] = []
-  let command = CommandType.CurveTo
-  let relative : Bool
-  required init(command : Character, arguments : [Float])
-  {
-    relative = command == "c"
-    for var i = 0; i < arguments.count; i += 6 {
-      args.append((
-        to: CGPoint(x: arguments[i+4], y: arguments[i+5]),
-        controlStart: CGPoint(x: arguments[i], y: arguments[i+1]),
-        controlEnd: CGPoint(x: arguments[i+2], y: arguments[i+3])
-      ))
-    }
-  }
-  func executeCommand(context : CGContextRef, var currentPoint : CGPoint) -> CGPoint {
-    for curve in args {
-      let a : (to: CGPoint, controlStart: CGPoint, controlEnd: CGPoint)
-      if relative {
-        a = (to: curve.to + currentPoint,
-          controlStart: curve.controlStart + currentPoint,
-          controlEnd:   curve.controlEnd + currentPoint)
-      } else {
-        a = curve
-      }
-      currentPoint = a.to
-      CGContextAddCurveToPoint(context,
-        a.controlStart.x, a.controlStart.y,
-        a.controlEnd.x, a.controlEnd.y,
-        a.to.x, a.to.y)
-    }
-    return currentPoint
-  }
-//  Draws a cubic Bézier curve from the current point to (x,y) using (x1,y1) as the control point at the beginning of the curve and (x2,y2) as the control point at the end of the curve. C (uppercase) indicates that absolute coordinates will follow; c (lowercase) indicates that relative coordinates will follow. Multiple sets of coordinates may be specified to draw a polybézier. At the end of the command, the new current point becomes the final (x,y) coordinate pair used in the polybézier.
-}
-
-class HorizontalLinePathCommand : PathCommand {
-  var args : [Float]
-  let command = CommandType.HLineTo
-  let relative : Bool
-  required init(command: Character, arguments: [Float]) {
-    relative = command == "h"
-    args = arguments
-  }
-  
-  func executeCommand(context : CGContextRef, var currentPoint : CGPoint) -> CGPoint {
-    for dest in args {
-      if relative {
-        currentPoint = CGPoint(x: currentPoint.x + CGFloat(dest), y: currentPoint.y)
-      } else {
-        currentPoint = CGPoint(x: CGFloat(dest), y: currentPoint.y)
-      }
-      CGContextAddLineToPoint(context, currentPoint.x, currentPoint.y)
-    }
-    return currentPoint
-  }
-}
-
-class VerticalLinePathCommand : PathCommand {
-  var args : [Float]
-  let command = CommandType.VLineTo
-  let relative : Bool
-  required init(command: Character, arguments: [Float]) {
-    relative = command == "v"
-    args = arguments
-  }
-  
-  func executeCommand(context : CGContextRef, var currentPoint : CGPoint) -> CGPoint {
-    for dest in args {
-      if relative {
-        currentPoint = CGPoint(x: currentPoint.x, y: currentPoint.y + CGFloat(dest))
-      } else {
-        currentPoint = CGPoint(x: currentPoint.x, y: CGFloat(dest))
-      }
-      CGContextAddLineToPoint(context, currentPoint.x, currentPoint.y)
-    }
-    return currentPoint
-  }
-}
-
-class ClosePathCommand : PathCommand {
-  let command = CommandType.ClosePath
-  let relative : Bool
-  required init(command: Character, arguments: [Float]) {
-    relative = false
-    guard arguments.count == 0 else {
-      fatalError()
-    }
-  }
-  func executeCommand(context : CGContextRef, currentPoint : CGPoint) -> CGPoint {
-    CGContextClosePath(context)
-    return CGContextGetPathCurrentPoint(context)
-  }
-}
-
-func commandToPathCommand(command : Character, arguments : [Float]) -> PathCommand {
-  guard let cmd = CommandType(rawValue: String(command).lowercaseString.characters.first!) else {
+/// Convert an even list of floats to CGPoints
+func floatsToPoints(data: [Float]) -> [CGPoint] {
+  guard data.count % 2 == 0 else {
     fatalError()
   }
-  //  let x = MoveToPathCommand.init
-  switch cmd {
-  case .MoveTo:
-    return MoveToPathCommand(command: command, arguments: arguments)
-  case .CurveTo:
-    return CurveToPathCommand(command: command, arguments: arguments)
-  case .HLineTo:
-    return HorizontalLinePathCommand(command: command, arguments: arguments)
-  case .VLineTo:
-    return VerticalLinePathCommand(command: command, arguments: arguments)
-  case .ClosePath:
-    return ClosePathCommand(command: command, arguments: arguments)
-  case .LineTo:
-    return LineToPathCommand(command: command, arguments: arguments)
-  default:
-    fatalError()
+  var out : [CGPoint] = []
+  for var i = 0; i < data.count-1; i += 2 {
+    out.append(CGPointMake(CGFloat(data[i]), CGFloat(data[i+1])))
   }
+  return out
 }
 
-func parsePathData(entry: String) -> Any {
-  var commands : [PathCommand] = []
-  
-  for match in pathSplitter.matchesInString(entry) {
-    let command = Character(match.groups[0])
+func parsePath(data: String) -> Any { // -> [PathInstruction]
+  var commands : [PathInstruction] = []
+  // The point for the start of the current subpath
+  var currentSubpathStart : CGPoint = CGPoint(x: 0, y: 0)
+  // The current working point
+  var currentPoint : CGPoint = CGPoint(x: 0, y: 0)
+  // Now process the path
+  for match in pathSplitter.matchesInString(data) {
+    let command = match.groups[0]
     // Split the arguments, if we have any
     let args = pathArgSplitter.matchesInString(match.groups[1])
       .filter({ !$0.groups[0].isEmpty })
       .map { Float($0.groups[0])! }
-    commands.append(commandToPathCommand(command, arguments: args))
+    // Absolute or relative?
+    let relative = command == command.lowercaseString
+    // Handle the commands
+    switch command.lowercaseString {
+    case "m":
+      for (i, point) in floatsToPoints(args).enumerate() {
+        currentPoint = relative ? currentPoint + point : point
+        if i == 0 {
+          currentSubpathStart = currentPoint
+          commands.append(.MoveTo(currentPoint))
+        } else {
+          commands.append(.LineTo(currentPoint))
+        }
+      }
+    case "l":
+      for point in floatsToPoints(args) {
+        currentPoint = relative ? currentPoint + point : point
+        commands.append(.LineTo(currentPoint))
+      }
+    case "h":
+      for point in args {
+        currentPoint = CGPointMake((relative ? currentPoint.x : 0) + CGFloat(point), currentPoint.y)
+        commands.append(.LineTo(currentPoint))
+      }
+    case "v":
+      for point in args {
+        currentPoint = CGPointMake(currentPoint.x, (relative ? currentPoint.y : 0) + CGFloat(point))
+        commands.append(.LineTo(currentPoint))
+      }
+    case "c":
+      for args in floatsToPoints(args).groupByStride(3) {
+        let controlA = relative ? currentPoint + args[0] : args[0]
+        let controlB = relative ? currentPoint + args[1] : args[1]
+        currentPoint = relative ? currentPoint + args[2] : args[2]
+        commands.append(.CurveTo(to: currentPoint, controlStart: controlA, controlEnd: controlB))
+      }
+    case "z":
+      commands.append(.ClosePath)
+      currentPoint = currentSubpathStart
+    default:
+      fatalError()
+    }
   }
   return commands
 }
 
+
 // MARK: Various Errata and extensions
 
-internal extension Dictionary {
-  /**
-  Union of self and the input dictionaries.
-  
-  :param: dictionaries Dictionaries to join
-  :returns: Union of self and the input dictionaries
-  */
-  func union (dictionaries: Dictionary...) -> Dictionary {
-    
-    var result = self
-    
-    for dict in dictionaries {
-      for (key, value) in dict {
-        result.updateValue(value, forKey: key)
-      }
+extension Array {
+  func groupByStride(stride : Int) -> [[Generator.Element]] {
+    var grouped : [[Generator.Element]] = []
+    for var i = 0; i <= self.count-stride; i += stride {
+      grouped.append(Array(self[i...i+stride-1]))
     }
-    
-    return result
-    
+    return grouped
   }
+}
+
+// Easy references to common colors
+private extension CGColor {
+  static var Black : CGColor { return CGColorCreate(CGColorSpaceCreateDeviceRGB(), [0,0,0,1])! }
 }
 
 extension CGRect {
@@ -844,12 +699,11 @@ extension CGPoint {
 }
 
 func +(left: CGPoint, right: CGPoint) -> CGPoint {
-  return CGPoint(x: left.x + right.x, y: left.y + right.y)
+  return CGPointMake(left.x + right.x, left.y + right.y)
 }
 
 
 struct Match {
-  //  var range : Range<String.Index>
   var groups : [String]
   var result : NSTextCheckingResult
   
