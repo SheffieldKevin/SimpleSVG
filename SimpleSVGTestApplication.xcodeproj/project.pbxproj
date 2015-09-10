@@ -13,6 +13,7 @@
 		0A3A77DD1B9B619400DB206B /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 0A3A77DB1B9B619400DB206B /* Main.storyboard */; };
 		0A3A77DF1B9B619400DB206B /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 0A3A77DE1B9B619400DB206B /* Assets.xcassets */; };
 		0A3A77E21B9B619400DB206B /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 0A3A77E01B9B619400DB206B /* LaunchScreen.storyboard */; };
+		0A74CCA31BA1871D00A8660F /* SimpleSVG_GLES.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A74CCA21BA1871D00A8660F /* SimpleSVG_GLES.swift */; };
 		0A99CCA01B9B61D600434D96 /* SimpleSVG.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A99CC9F1B9B61D600434D96 /* SimpleSVG.swift */; };
 		0A9B97091B9B7A1600995795 /* test_image2.svg in Resources */ = {isa = PBXBuildFile; fileRef = 0A9B97081B9B7A1600995795 /* test_image2.svg */; };
 		0ADFA24C1B9B625400512C0F /* SVGView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0ADFA24B1B9B625400512C0F /* SVGView.swift */; };
@@ -28,6 +29,7 @@
 		0A3A77DE1B9B619400DB206B /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		0A3A77E11B9B619400DB206B /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
 		0A3A77E31B9B619400DB206B /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		0A74CCA21BA1871D00A8660F /* SimpleSVG_GLES.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = SimpleSVG_GLES.swift; sourceTree = "<group>"; };
 		0A99CC9F1B9B61D600434D96 /* SimpleSVG.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = SimpleSVG.swift; sourceTree = SOURCE_ROOT; };
 		0A9B97081B9B7A1600995795 /* test_image2.svg */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.xml; path = test_image2.svg; sourceTree = "<group>"; };
 		0ADFA24B1B9B625400512C0F /* SVGView.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = SVGView.swift; sourceTree = "<group>"; };
@@ -68,6 +70,7 @@
 				0A9B97081B9B7A1600995795 /* test_image2.svg */,
 				0ADFA24D1B9B632300512C0F /* test_image.svg */,
 				0A99CC9F1B9B61D600434D96 /* SimpleSVG.swift */,
+				0A74CCA21BA1871D00A8660F /* SimpleSVG_GLES.swift */,
 				0A3A77D71B9B619400DB206B /* AppDelegate.swift */,
 				0A3A77D91B9B619400DB206B /* ViewController.swift */,
 				0ADFA24B1B9B625400512C0F /* SVGView.swift */,
@@ -153,6 +156,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				0A74CCA31BA1871D00A8660F /* SimpleSVG_GLES.swift in Sources */,
 				0A99CCA01B9B61D600434D96 /* SimpleSVG.swift in Sources */,
 				0A3A77DA1B9B619400DB206B /* ViewController.swift in Sources */,
 				0A3A77D81B9B619400DB206B /* AppDelegate.swift in Sources */,
