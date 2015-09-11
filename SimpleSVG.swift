@@ -965,7 +965,7 @@ private struct SVGRegexMatch {
       if range.location == NSNotFound {
         groups.append("")
       } else {
-        groups.append(string.substringWithRange(range))
+        groups.append((string as NSString).substringWithRange(range))
       }
     }
     self.groups = groups
@@ -989,13 +989,6 @@ private class SVGRegex {
   func matchesInString(string : String) -> [SVGRegexMatch] {
     let nsS = string as NSString
     return re.matchesInString(string, options: NSMatchingOptions(), range: NSRange(location: 0, length: nsS.length)).map { SVGRegexMatch(string: string, result: $0) }
-  }
-}
-
-private extension String {
-  func substringWithRange(range : NSRange) -> String {
-    let nss = self as NSString
-    return nss.substringWithRange(range)
   }
 }
 
