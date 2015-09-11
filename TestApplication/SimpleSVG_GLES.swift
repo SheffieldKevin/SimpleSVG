@@ -245,7 +245,11 @@ func *(left: CGPoint, right: CGFloat) -> CGPoint {
 func -(left: CGPoint, right: CGPoint) -> CGPoint {
   return CGPointMake(left.x-right.x, left.y-right.y)
 }
-infix operator • {}
+func CGPointAsVectorLength(pt: CGPoint) -> CGFloat {
+  return sqrt(pt.x*pt.x + pt.y*pt.y)
+}
+
+infix operator • {associativity left precedence 140}
 
 postfix operator ⟂ {}
 

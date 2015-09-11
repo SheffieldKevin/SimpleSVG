@@ -22,7 +22,6 @@ import Foundation
 import CoreGraphics
 import GLKit
 
-typealias SVGPoint = GLKVector3
 typealias SVGMatrix = GLKMatrix3
 
 /// The public face of the module. Loads an SVGFile and has options for rendering
@@ -38,6 +37,7 @@ public class SVGImage {
   
   public func drawToContext(context : CGContextRef) {
     svg.drawToContext(context)
+    let boundingBox = svg.boundingBox
   }
   
   public func drawIdToContext(context : CGContextRef, id : String) {
@@ -210,31 +210,25 @@ private func CGColorCreateFromString(string : String) -> CGColor? {
   return nil
 }
 
-// MARK: SVG Element classes
+// MARK: SVG Element protocols
 
-protocol SVGDrawable {
+protocol SVGElement {
+  var id : String? { get }
+  var attributes : [String : Any] { get }
+  var sourceLine : UInt { get }
+}
+
+protocol SVGTransformable : SVGElement {
+  var transform : SVGMatrix { get }
+}
+
+protocol SVGDrawable : SVGElement, SVGTransformable {
   func drawToContext(context : CGContextRef)
   var boundingBox : CGRect? { get }
 }
 
 protocol ContainerElement : SVGDrawable {
   var children : [SVGElement] { get mutating set }
-}
-
-extension ContainerElement {
-  var boundingBox : CGRect? {
-    // Unify all the child bounding boxes
-    let xf = (self as? SVGTransformable)?.transform ?? SVGMatrix.Identity
-    
-    var boundingBox : CGRect? = nil
-    for child in children.filter({ $0 is SVGDrawable }).map({ $0 as! SVGDrawable }) {
-      guard let childBox = child.boundingBox else {
-        continue
-      }
-      boundingBox = boundingBox ∪? childBox
-    }
-    return boundingBox
-  }
 }
 
 protocol PresentationElement : SVGElement {
@@ -247,6 +241,8 @@ protocol PresentationElement : SVGElement {
   var display : String { get }
 }
 
+// MARK: SVG protocol implementation extensions
+
 extension PresentationElement {
   var display : String {
     return (attributes["display"] ?? "") as? String ?? "inline"
@@ -257,27 +253,70 @@ extension PresentationElement {
   var miterLimit : Float { return Float(attributes["stroke-miterlimit"] as? String ?? "4")! }
 }
 
+extension CGRect {
+  func transformedBoundingBox(transform: SVGMatrix) -> CGRect {
+    let points = [
+      CGPointMake(minX, minY),
+      CGPointMake(minX, maxY),
+      CGPointMake(maxX, minY),
+      CGPointMake(maxX, maxY)
+    ]
+    let transformed = points.map({transform * $0})
+    let newRect = transformed.reduce(nil, combine: {$0 ∪? $1})
+    return newRect!
+  }
+}
 
-// Basic SVG Protocols
-protocol SVGTransformable {
-  var transform : SVGMatrix { get }
+extension ContainerElement {
+  var boundingBox : CGRect? {
+    // Unify all the child bounding boxes
+    var boundingBox : CGRect? = nil
+    for child in children.filter({ $0 is SVGDrawable }).map({ $0 as! SVGDrawable }) {
+      guard let childBox = child.boundingBox else {
+        continue
+      }
+      // Transform the bounding box
+      boundingBox = boundingBox ∪? childBox.transformedBoundingBox(child.transform)
+    }
+    return boundingBox
+  }
+  
+  func drawToContext(context: CGContextRef) {
+    if let drawable = self as? PresentationElement where drawable.display == "none" {
+      return
+    }
+    // Loop over all children and draw
+    for child in children.filter({ $0 is SVGDrawable }).map({ $0 as! SVGDrawable }) {
+      if let pres = child as? PresentationElement {
+        if pres.isInvisible() { continue }
+      }
+      CGContextSaveGState(context)
+      CGContextConcatCTM(context, child.transform.affine)
+
+      // Draw the child
+      child.drawToContext(context)
+      CGContextRestoreGState(context)
+      
+      // Draw the transformed bounding box
+      let rBB = child.boundingBox!.transformedBoundingBox(child.transform)
+      CGContextAddRect(context, rBB)
+      CGContextSetStrokeColorWithColor(context, CGColor.Black)
+      CGContextSetLineWidth(context, 1)
+      CGContextDrawPath(context, .Stroke)
+      
+    }
+  }
 }
-extension Path : SVGTransformable {
-  var transform : SVGMatrix { return attributes["transform"] as? SVGMatrix ?? SVGMatrix.Identity }
-}
-extension SVGGroup : SVGTransformable {
+
+extension SVGTransformable {
   var transform : SVGMatrix { return attributes["transform"] as? SVGMatrix ?? SVGMatrix.Identity }
 }
 // Transformable: √ ‘circle’ ‘ellipse’,‘line’, ‘path’, ‘polygon’, ‘polyline’, ‘rect’, ‘g’,
 //‘a’, ‘clipPath’, ‘defs’, ‘foreignObject’, ‘image’,  ‘switch’, ‘text’, ‘use’
 
-// The base class for any physical elements
-protocol SVGElement {
-  var id : String? { get }
-  var attributes : [String : Any] { get }
-  var sourceLine : UInt { get }
-}
+// MARK: SVG Class implementations
 
+// The base class for any physical elements
 class SVGElementBase : SVGElement {
   var id : String? { return attributes["id"] as? String }
   var attributes : [String : Any] = [:]
@@ -292,80 +331,9 @@ class SVGUnknownElement : SVGElementBase {
   }
 }
 
-extension SVGMatrix : CustomStringConvertible, CustomDebugStringConvertible {
-  static var Identity : SVGMatrix { return GLKMatrix3Identity }
-  
-  public var description : String { return NSStringFromGLKMatrix3(self) }
-  public var debugDescription : String { return description }
-  
-  init(a: Float, b: Float, c: Float, d: Float, e: Float, f: Float) {
-    self = GLKMatrix3Make(a, b, 0, c, d, 0, e, f, 1)
-  }
-  init(data : [Float]) {
-    self = GLKMatrix3Make(data[0], data[1], 0, data[2], data[3], 0, data[4], data[5], 1)
-  }
-  init(translation : CGPoint) {
-    ///  [1 0 0 1 tx ty]
-    self.init(a: 1, b: 0, c: 0, d: 1, e: Float(translation.x), f: Float(translation.y))
-  }
-  init(scale: CGPoint) {
-    self.init(a: Float(scale.x), b: 0, c: 0, d: Float(scale.y), e: 0, f: 0)
-  }
-  init(rotation r: Float) {
-    self.init(a: cos(r), b: sin(r), c: -sin(r), d: cos(r), e: 0, f: 0)
-  }
-  init(skewX s : Float) {
-    self.init(a: 1, b: 0, c: tan(s), d: 1, e: 0, f: 0)
-  }
-  init(skewY s : Float) {
-    self.init(a: 1, b: tan(s), c: 0, d: 1, e: 0, f: 0)
-  }
-  var affine : CGAffineTransform {
-    return CGAffineTransformMake(CGFloat(m00), CGFloat(m01), CGFloat(m10), CGFloat(m11), CGFloat(m20), CGFloat(m21))
-  }
-}
-func *(left: SVGMatrix, right: SVGMatrix) -> SVGMatrix {
-  return GLKMatrix3Multiply(left, right)
-}
-func *(left: SVGMatrix, right: GLKVector3) -> GLKVector3 {
-  return GLKMatrix3MultiplyVector3(left, right)
-}
-func *(left: SVGMatrix, right: CGPoint) -> CGPoint {
-  let v3 = GLKVector3Make(Float(right.x), Float(right.y), 1)
-  let tx = GLKMatrix3MultiplyVector3(left, v3)
-  return CGPointMake(CGFloat(tx.x), CGFloat(tx.y))
-}
-func *=(inout left: SVGMatrix, right: SVGMatrix) {
-  left = left * right
-}
-
-extension ContainerElement {
-  func drawToContext(context: CGContextRef) {
-    if let drawable = self as? PresentationElement where drawable.display == "none" {
-        return
-    }
-    // Loop over all children and draw
-    for child in children.filter({ $0 is SVGDrawable }).map({ $0 as! SVGDrawable }) {
-      if let pres = child as? PresentationElement {
-        if pres.isInvisible() { continue }
-      }
-      CGContextSaveGState(context)
-      if let xf = child as? SVGTransformable {
-        CGContextConcatCTM(context, xf.transform.affine)
-      }
-      child.drawToContext(context)
-      CGContextRestoreGState(context)
-    }
-  }
-}
-
 /// An SVG element that can contain other SVG elements. For e.g. svg, g, defs
-class SVGGroup : SVGElementBase, ContainerElement, SVGDrawable {
+class SVGGroup : SVGElementBase, ContainerElement, SVGDrawable, SVGTransformable {
   var children : [SVGElement] = []
-  var display : String { return (attributes["display"] ?? "") as? String ?? "inline" }
-  var drawableChildren : [SVGDrawable] {
-    return children.filter({ $0 is SVGDrawable }).map({ $0 as! SVGDrawable })
-  }
 }
 
 /// The root element of any SVG file
@@ -388,7 +356,7 @@ class SVGContainer : SVGElementBase, ContainerElement {
 }
 
 /// Generic base class for handling path objects
-class Path : SVGElementBase, SVGDrawable, PresentationElement {
+class Path : SVGElementBase, SVGDrawable, PresentationElement, SVGTransformable {
   var d : [PathInstruction] {
     return attributes["d"] as? [PathInstruction] ?? []
   }
@@ -436,7 +404,7 @@ class Path : SVGElementBase, SVGDrawable, PresentationElement {
         fatalError()
       }
     }
-    return box
+    return hasStroke ? box?.inset(CGFloat(-strokeWidth.value/2)) : box
   }
 }
 
@@ -456,7 +424,8 @@ class Circle : Path {
   }
   
   override var boundingBox : CGRect? {
-    return CGRectMake(center.x-radius, center.y-radius, 2*radius, 2*radius)
+    let s = CGFloat(hasStroke ? strokeWidth.value : 0)
+    return CGRectMake(center.x-radius-s/2, center.y-radius-s/2, 2*radius+s, 2*radius+s)
   }
 }
 
@@ -479,7 +448,8 @@ class Line : Path {
   }
   
   override var boundingBox : CGRect? {
-    return CGRectMake(start.x, start.y, 0, 0) ∪ end
+    let s = CGFloat(hasStroke ? strokeWidth.value/2 : 0)
+    return (CGRectMake(start.x, start.y, 0, 0) ∪ end).inset(-s)
   }
 }
 
@@ -495,8 +465,32 @@ class Polygon : Path {
   }
   
   override var boundingBox : CGRect? {
+    // Work out the maximum miter extent
+//    miterLength / stroke-width = 1 / sin ( theta / 2 )
+    // Make a list of lines
+    var maxMiter = strokeWidth.value
+    // Only calculate miter if we have a stroke
+    if hasStroke {
+      for i in 0..<points.count {
+        let lineA = (points[i], points[(i+1) % points.count])
+        let lineB = (points[(i+1) % points.count], points[(i+2) % points.count])
+        let vecA = lineA.1 - lineA.0
+        let vecB = lineB.1 - lineB.0
+        let cosTheta = (vecA • vecB) /
+          (CGPointAsVectorLength(vecA) * CGPointAsVectorLength(vecB))
+        let theta = acos(cosTheta)
+        let miterDistance = Float(1 / sin(theta/2)) * strokeWidth.value
+        // If this is a valid miter, then
+        if miterDistance < miterLimit {
+          maxMiter = max(miterDistance, maxMiter)
+        }
+      }
+    }
+    
+    let s = CGFloat(hasStroke ? maxMiter : 0)
     let start = CGRectMake(points[0].x, points[0].y, 0, 0)
     return points.reduce(start, combine: { $0 ∪ $1 })
+      .inset(-s)
   }
 }
 
@@ -515,7 +509,8 @@ class Rect : Path {
   }
 
   override var boundingBox : CGRect? {
-    return rect
+    let s = CGFloat(hasStroke ? strokeWidth.value/2 : 0)
+    return rect.inset(-s)
   }
 }
 
@@ -539,8 +534,9 @@ class PolyLine : Path {
   }
 
   override var boundingBox : CGRect? {
+    let s = CGFloat(hasStroke ? strokeWidth.value/2 : 0)
     let start = CGRectMake(points[0].x, points[0].y, 0, 0)
-    return points.reduce(start, combine: { $0 ∪ $1 })
+    return points.reduce(start, combine: { $0 ∪ $1 }).inset(-s)
   }
 }
 
@@ -918,11 +914,16 @@ extension Array {
 // Easy references to common colors
 private extension CGColor {
   static var Black : CGColor { return CGColorCreate(CGColorSpaceCreateDeviceRGB(), [0,0,0,1])! }
+  static var Red : CGColor { return CGColorCreate(CGColorSpaceCreateDeviceRGB(), [1,0,0,1])! }
+  
 }
 
 extension CGRect {
   init(x : Float, y: Float, width: Float, height: Float) {
     self.init(x: CGFloat(x), y: CGFloat(y), width: CGFloat(width), height: CGFloat(height))
+  }
+  func inset(amount: CGFloat) -> CGRect {
+    return CGRectInset(self, CGFloat(amount), CGFloat(amount))
   }
 }
 
@@ -958,7 +959,6 @@ func ∪?(right: CGPoint, left: CGRect?) -> CGRect? {
   }
   return CGRectUnion(l, rRect)
 }
-
 
 extension CGPoint {
   init(x: Float, y: Float) {
@@ -1017,3 +1017,50 @@ extension String {
   }
 }
 
+
+extension SVGMatrix : CustomStringConvertible, CustomDebugStringConvertible {
+  static var Identity : SVGMatrix { return GLKMatrix3Identity }
+  
+  public var description : String { return NSStringFromGLKMatrix3(self) }
+  public var debugDescription : String { return description }
+  
+  init(a: Float, b: Float, c: Float, d: Float, e: Float, f: Float) {
+    self = GLKMatrix3Make(a, b, 0, c, d, 0, e, f, 1)
+  }
+  init(data : [Float]) {
+    self = GLKMatrix3Make(data[0], data[1], 0, data[2], data[3], 0, data[4], data[5], 1)
+  }
+  init(translation : CGPoint) {
+    ///  [1 0 0 1 tx ty]
+    self.init(a: 1, b: 0, c: 0, d: 1, e: Float(translation.x), f: Float(translation.y))
+  }
+  init(scale: CGPoint) {
+    self.init(a: Float(scale.x), b: 0, c: 0, d: Float(scale.y), e: 0, f: 0)
+  }
+  init(rotation r: Float) {
+    self.init(a: cos(r), b: sin(r), c: -sin(r), d: cos(r), e: 0, f: 0)
+  }
+  init(skewX s : Float) {
+    self.init(a: 1, b: 0, c: tan(s), d: 1, e: 0, f: 0)
+  }
+  init(skewY s : Float) {
+    self.init(a: 1, b: tan(s), c: 0, d: 1, e: 0, f: 0)
+  }
+  var affine : CGAffineTransform {
+    return CGAffineTransformMake(CGFloat(m00), CGFloat(m01), CGFloat(m10), CGFloat(m11), CGFloat(m20), CGFloat(m21))
+  }
+}
+func *(left: SVGMatrix, right: SVGMatrix) -> SVGMatrix {
+  return GLKMatrix3Multiply(left, right)
+}
+func *(left: SVGMatrix, right: GLKVector3) -> GLKVector3 {
+  return GLKMatrix3MultiplyVector3(left, right)
+}
+func *(left: SVGMatrix, right: CGPoint) -> CGPoint {
+  let v3 = GLKVector3Make(Float(right.x), Float(right.y), 1)
+  let tx = GLKMatrix3MultiplyVector3(left, v3)
+  return CGPointMake(CGFloat(tx.x), CGFloat(tx.y))
+}
+func *=(inout left: SVGMatrix, right: SVGMatrix) {
+  left = left * right
+}
