@@ -37,13 +37,13 @@ public class SVGImage {
   }
   
   public func drawToContext(context : CGContextRef) {
-    svg.drawToContext(context, state: SVGState())
+    svg.drawToContext(context)
   }
   
   public func drawIdToContext(context : CGContextRef, id : String) {
     let elem = svg.findWithID(id)
     let boundingBox = elem?.boundingBox
-    elem?.drawToContext(context, state: SVGState())
+    elem?.drawToContext(context)
   }
 }
 
@@ -213,7 +213,7 @@ private func CGColorCreateFromString(string : String) -> CGColor? {
 // MARK: SVG Element classes
 
 protocol SVGDrawable {
-  func drawToContext(context : CGContextRef, state: SVGState)
+  func drawToContext(context : CGContextRef)
   var boundingBox : CGRect? { get }
 }
 
@@ -246,17 +246,7 @@ protocol PresentationElement {
   var miterLimit : Float { get }
 }
 
-/// State object passed down amongst transformational elements
-struct SVGState {
-  var transform = SVGMatrix.Identity
-  
-  func applyTransform(transform : SVGMatrix) -> SVGState {
-    return SVGState(transform: GLKMatrix3Multiply(self.transform, transform))
-  }
-}
-
 // Basic SVG Protocols
-
 protocol SVGTransformable {
   var transform : SVGMatrix { get }
 }
@@ -338,7 +328,7 @@ class SVGGroup : SVGElement, ContainerElement, SVGDrawable {
   var drawableChildren : [SVGDrawable] {
     return children.filter({ $0 is SVGDrawable }).map({ $0 as! SVGDrawable })
   }
-  func drawToContext(context: CGContextRef, state: SVGState) {
+  func drawToContext(context: CGContextRef) {
     if display == "none" { return }
     
     // Loop over all children and draw
@@ -346,12 +336,11 @@ class SVGGroup : SVGElement, ContainerElement, SVGDrawable {
       if let pres = child as? PresentationElement {
         if pres.isInvisible() { continue }
       }
-      //    let subState = state.applyTransform(self.transform)
       CGContextSaveGState(context)
       if let xf = child as? SVGTransformable {
         CGContextConcatCTM(context, xf.transform.affine)
       }
-      child.drawToContext(context, state: state)
+      child.drawToContext(context)
       CGContextRestoreGState(context)
     }
   }
@@ -371,7 +360,7 @@ class SVGContainer : SVGElement, ContainerElement {
     attributes["height"] = Length(value: 100, unit: .pc)
   }
   
-  func drawToContext(context: CGContextRef, state: SVGState) {
+  func drawToContext(context: CGContextRef) {
     // Loop over all children and draw
     for child in children.filter({ $0 is SVGDrawable }).map({ $0 as! SVGDrawable }) {
       if let pres = child as? PresentationElement {
@@ -381,7 +370,7 @@ class SVGContainer : SVGElement, ContainerElement {
       if let xf = child as? SVGTransformable {
         CGContextConcatCTM(context, xf.transform.affine)
       }
-      child.drawToContext(context, state: state)
+      child.drawToContext(context)
       CGContextRestoreGState(context)
     }
   }
@@ -402,7 +391,7 @@ class Path : SVGElement, SVGDrawable, PresentationElement {
     return attributes["d"] as? [PathInstruction] ?? []
   }
   
-  func drawToContext(context : CGContextRef, state: SVGState)
+  func drawToContext(context : CGContextRef)
   {
 //    let subState = state.applyTransform(self.transform)
 
@@ -460,8 +449,7 @@ class Circle : Path {
     return CGPointMake(CGFloat(x?.value ?? 0), CGFloat(y?.value ?? 0))
   }
   
-  override func drawToContext(context: CGContextRef, state: SVGState) {
-//    let center = state.transform * self.transform * self.center
+  override func drawToContext(context: CGContextRef) {
     CGContextAddEllipseInRect(context,
       CGRect(x: center.x-radius, y: center.y-radius, width: radius*2, height: radius*2))
     handleStrokeAndFill(context)
@@ -484,7 +472,7 @@ class Line : Path {
     return CGPoint(x: x?.value ?? 0, y: y?.value ?? 0)
   }
   
-  override func drawToContext(context: CGContextRef, state: SVGState) {
+  override func drawToContext(context: CGContextRef) {
     var points = [start, end]
     CGContextAddLines(context, &points, 2)
     handleStrokeAndFill(context)
@@ -499,7 +487,7 @@ class Polygon : Path {
   var points : [CGPoint] {
     return attributes["points"] as? [CGPoint] ?? []
   }
-  override func drawToContext(context: CGContextRef, state: SVGState) {
+  override func drawToContext(context: CGContextRef) {
     var pts = points
     CGContextAddLines(context, &pts, pts.count)
     CGContextClosePath(context)
@@ -521,7 +509,7 @@ class Rect : Path {
     return CGRect(x: x?.value ?? 0, y: y?.value ?? 0, width: width?.value ?? 0, height: height?.value ?? 0)
   }
   
-  override func drawToContext(context: CGContextRef, state: SVGState) {
+  override func drawToContext(context: CGContextRef) {
     CGContextAddRect(context, rect)
     handleStrokeAndFill(context)
   }
@@ -532,7 +520,7 @@ class Rect : Path {
 }
 
 class Ellipse : Path {
-  override func drawToContext(context: CGContextRef, state: SVGState) {
+  override func drawToContext(context: CGContextRef) {
     fatalError()
   }
   override var boundingBox : CGRect? {
@@ -544,7 +532,7 @@ class PolyLine : Path {
   var points : [CGPoint] {
     return attributes["points"] as? [CGPoint] ?? []
   }
-  override func drawToContext(context: CGContextRef, state: SVGState) {
+  override func drawToContext(context: CGContextRef) {
     var pts = points
     CGContextAddLines(context, &pts, pts.count)
     handleStrokeAndFill(context)
