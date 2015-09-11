@@ -284,8 +284,51 @@ class SVGUnknownElement : SVGElement {
   }
 }
 
-extension SVGMatrix {
+extension SVGMatrix : CustomStringConvertible, CustomDebugStringConvertible {
   static var Identity : SVGMatrix { return GLKMatrix3Identity }
+  
+  public var description : String { return NSStringFromGLKMatrix3(self) }
+  public var debugDescription : String { return description }
+  
+  init(a: Float, b: Float, c: Float, d: Float, e: Float, f: Float) {
+    self = GLKMatrix3Make(a, b, 0, c, d, 0, e, f, 1)
+  }
+  init(data : [Float]) {
+    self = GLKMatrix3Make(data[0], data[1], 0, data[2], data[3], 0, data[4], data[5], 1)
+  }
+  init(translation : CGPoint) {
+    ///  [1 0 0 1 tx ty]
+    self.init(a: 1, b: 0, c: 0, d: 1, e: Float(translation.x), f: Float(translation.y))
+  }
+  init(scale: CGPoint) {
+    self.init(a: Float(scale.x), b: 0, c: 0, d: Float(scale.y), e: 0, f: 0)
+  }
+  init(rotation r: Float) {
+    self.init(a: cos(r), b: sin(r), c: -sin(r), d: cos(r), e: 0, f: 0)
+  }
+  init(skewX s : Float) {
+    self.init(a: 1, b: 0, c: tan(s), d: 1, e: 0, f: 0)
+  }
+  init(skewY s : Float) {
+    self.init(a: 1, b: tan(s), c: 0, d: 1, e: 0, f: 0)
+  }
+  var affine : CGAffineTransform {
+    return CGAffineTransformMake(CGFloat(m00), CGFloat(m01), CGFloat(m10), CGFloat(m11), CGFloat(m20), CGFloat(m21))
+  }
+}
+func *(left: SVGMatrix, right: SVGMatrix) -> SVGMatrix {
+  return GLKMatrix3Multiply(left, right)
+}
+func *(left: SVGMatrix, right: GLKVector3) -> GLKVector3 {
+  return GLKMatrix3MultiplyVector3(left, right)
+}
+func *(left: SVGMatrix, right: CGPoint) -> CGPoint {
+  let v3 = GLKVector3Make(Float(right.x), Float(right.y), 1)
+  let tx = GLKMatrix3MultiplyVector3(left, v3)
+  return CGPointMake(CGFloat(tx.x), CGFloat(tx.y))
+}
+func *=(inout left: SVGMatrix, right: SVGMatrix) {
+  left = left * right
 }
 
 /// An SVG element that can contain other SVG elements. For e.g. svg, g, defs
@@ -298,14 +341,18 @@ class SVGGroup : SVGElement, ContainerElement, SVGDrawable {
   func drawToContext(context: CGContextRef, state: SVGState) {
     if display == "none" { return }
     
-    let subState = state.applyTransform(self.transform)
-    
     // Loop over all children and draw
     for child in drawableChildren {
       if let pres = child as? PresentationElement {
         if pres.isInvisible() { continue }
       }
-      child.drawToContext(context, state: subState)
+      //    let subState = state.applyTransform(self.transform)
+      CGContextSaveGState(context)
+      if let xf = child as? SVGTransformable {
+        CGContextConcatCTM(context, xf.transform.affine)
+      }
+      child.drawToContext(context, state: state)
+      CGContextRestoreGState(context)
     }
   }
 }
@@ -330,7 +377,12 @@ class SVGContainer : SVGElement, ContainerElement {
       if let pres = child as? PresentationElement {
         if pres.isInvisible() { continue }
       }
+      CGContextSaveGState(context)
+      if let xf = child as? SVGTransformable {
+        CGContextConcatCTM(context, xf.transform.affine)
+      }
       child.drawToContext(context, state: state)
+      CGContextRestoreGState(context)
     }
   }
   
@@ -352,10 +404,13 @@ class Path : SVGElement, SVGDrawable, PresentationElement {
   
   func drawToContext(context : CGContextRef, state: SVGState)
   {
+//    let subState = state.applyTransform(self.transform)
+
     guard d.count > 0 else {
       print("Warning: Path with no data from line \(sourceLine)")
       return
     }
+    
     for command in d {
       switch command {
       case .MoveTo(let to):
@@ -406,6 +461,7 @@ class Circle : Path {
   }
   
   override func drawToContext(context: CGContextRef, state: SVGState) {
+//    let center = state.transform * self.transform * self.center
     CGContextAddEllipseInRect(context,
       CGRect(x: center.x-radius, y: center.y-radius, width: radius*2, height: radius*2))
     handleStrokeAndFill(context)
@@ -640,12 +696,61 @@ func parseListOfPoints(entry : String) -> Any {
 }
 
 
+let transformFunction = Regex(pattern: "\\s*(\\w+)\\s*\\(([^)]*)\\)\\s*,?\\s*")
+let transformArgumentSplitter = Regex(pattern: "\\s*([^\\s),]+)")
+
 func parseTransform(entry: String) -> Any {
-  guard entry.isEmpty else {
-    print("Warning: Cannot parse transform \(entry)")
+  if entry.isEmpty {
     return SVGMatrix.Identity
   }
-  return SVGMatrix.Identity
+  var current = SVGMatrix.Identity
+  
+  for match in transformFunction.matchesInString(entry) {
+    let function = match.groups[0]
+    let args = transformArgumentSplitter.matchesInString(match.groups[1]).map({Float($0.groups[0])!})
+    switch function {
+    case "matrix":
+      guard args.count == 6 else {
+        fatalError()
+      }
+      current *= SVGMatrix(data: args)
+    case "translate":
+      guard args.count == 1 || args.count == 2 else {
+        fatalError()
+      }
+      let tx = CGPointMake(CGFloat(args[0]), args.count == 2 ? CGFloat(args[1]) : 0)
+      current *= SVGMatrix(translation: tx)
+    case "scale":
+      guard args.count == 1 || args.count == 2 else {
+        fatalError()
+      }
+      let sc = CGPointMake(CGFloat(args[0]), args.count == 2 ? CGFloat(args[1]) : 0)
+      current *= SVGMatrix(scale: sc)
+    case "rotate":
+      guard args.count == 1 || args.count == 3 else {
+        fatalError()
+      }
+      let offset = args.count == 3
+        ? CGPointMake(CGFloat(args[1]), CGFloat(args[2]))
+        : CGPointMake(0, 0)
+      current *= SVGMatrix(translation: offset)
+        * SVGMatrix(rotation: args[0])
+        * SVGMatrix(translation: CGPointMake(-offset.x, -offset.y))
+    case "skewX":
+      guard args.count == 1 else {
+        fatalError()
+      }
+      current *= SVGMatrix(skewX: args[0])
+    case "skewY":
+      guard args.count == 1 else {
+        fatalError()
+      }
+      current *= SVGMatrix(skewY: args[0])
+    default:
+      fatalError()
+    }
+  }
+  return current
 }
 
 /// Main XML Parser

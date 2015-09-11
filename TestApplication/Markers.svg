@@ -8,7 +8,7 @@
 		<circle fill="#C84ED7" cx="194.117" cy="165.882" r="10.694"/>
 		<rect x="190.47" y="188.529" fill="#C84ED7" width="7" height="30"/>
 		
-			<rect x="223.294" y="132.187" transform="matrix(-0.5 -0.866 0.866 -0.5 212.7355 417.1903)" fill="#C84ED7" width="6.999" height="30"/>
+			<rect id="xfrect" x="223.294" y="132.187" transform="matrix(-0.5 -0.866 0.866 -0.5 212.7355 417.1903)" fill="#C84ED7" width="6.999" height="30"/>
 		
 			<rect x="158.088" y="131.932" transform="matrix(-0.4999 0.8661 -0.8661 -0.4999 369.6228 80.4409)" fill="#C84ED7" width="7" height="30"/>
 		<rect x="140.47" y="112.529" fill="none" width="107" height="107"/>
@@ -117,7 +117,7 @@
 	<g>
 		<polygon fill="none" stroke="#C84ED7" stroke-width="7" stroke-miterlimit="10" points="65,26.029 
 			95,78.029 35,78.029 		"/>
-		<circle clip-path="url(#SVGID_2_)" fill="#C84ED7" cx="64.116" cy="59.015" r="3.863"/>
+		<circle fill="#C84ED7" cx="64.116" cy="59.015" r="3.863"/>
 	</g>
 </g>
 <g id="AntiNormal">
