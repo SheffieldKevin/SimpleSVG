@@ -26,26 +26,17 @@ typealias SVGMatrix = GLKMatrix3
 
 /// The public face of the module. Loads an SVGFile and has options for rendering
 public class SVGImage {
-  let svg : SVGContainer
+  private let svg : SVGContainer
   
   public init(withContentsOfFile file : NSURL) {
     // Read the file
     let data = NSData(contentsOfURL: file)!
-    let parser = Parser(data: data)
+    let parser = SVGParser(data: data)
     svg = parser.parse() as! SVGContainer
   }
   
   public func drawToContext(context : CGContextRef) {
     svg.drawToContext(context)
-//    let boundingBox = svg.boundingBox
-  }
-  
-  public func drawIdToContext(context : CGContextRef, id : String) {
-    let elem = svg.findWithID(id)
-//    CGContextSaveGState(context)
-//    CGContextConcatCTM(context, transform.affine)
-    elem?.drawToContext(context)
-//    CGContextRestoreGState(context)
   }
   
   // Draw an element with a specific ID, aligned and sized to fit a specific context
@@ -68,12 +59,10 @@ public class SVGImage {
   }
 }
 
-/// A function that will take an XML attribute entry and convert it
-private typealias Converter = (String) -> Any
-
 // MARK: Parser Configuration and which entities are handled
 
 /// Which parsers handle different data types
+private typealias Converter = (String) -> Any
 private let parserMap : [String : Converter] = [
   "<length>": parseLength,
   "<coord>":  parseLength,
@@ -85,25 +74,25 @@ private let parserMap : [String : Converter] = [
 
 /// Which attribute names hold which different data types
 private let dataTypesForAttributeNames : [String:[String]] = [
-  "<paint>": ["fill", "stroke"],
+  "<paint>":  ["fill", "stroke"],
   "<length>": ["width", "height", "rx", "ry", "r", "stroke-width"],
-  "<coord>": ["x", "y", "cx", "cy", "x1", "y1", "x2", "y2"],
-  "<list-of-points>": ["points"],
+  "<coord>":  ["x", "y", "cx", "cy", "x1", "y1", "x2", "y2"],
   "<path-data>": ["d"],
   "<transform>": ["transform"],
+  "<list-of-points>": ["points"],
 ]
 
 /// Which SVG entity to create for a particular XML tag name
 private let tagCreationMap : [String : () -> SVGElement] = [
-  "svg": { SVGContainer() as SVGElement},
-  "g"  : { SVGGroup() as SVGElement},
+  "svg":    { SVGContainer() as SVGElement},
+  "g"  :    { SVGGroup() as SVGElement},
   "circle": { Circle() as SVGElement },
-  "line": { Line() as SVGElement },
-  "polygon": { Polygon() as SVGElement },
-  "ellipse": { Ellipse() as SVGElement },
-  "rect": { Rect() as SVGElement },
+  "line":   { Line() as SVGElement },
+  "polygon":{ Polygon() as SVGElement },
+  "ellipse":{ Ellipse() as SVGElement },
+  "rect":   { Rect() as SVGElement },
   "polyline": { PolyLine() as SVGElement },
-  "path": { Path() as SVGElement },
+  "path":   { Path() as SVGElement },
 ]
 
 /// Get the parser conversion function for a particular element and attribute
@@ -239,20 +228,20 @@ protocol SVGElement {
   var sourceLine : UInt { get }
 }
 
-protocol SVGTransformable : SVGElement {
+private protocol SVGTransformable : SVGElement {
   var transform : SVGMatrix { get }
 }
 
-protocol SVGDrawable : SVGElement, SVGTransformable {
+private protocol SVGDrawable : SVGElement, SVGTransformable {
   func drawToContext(context : CGContextRef)
   var boundingBox : CGRect? { get }
 }
 
-protocol ContainerElement : SVGDrawable {
+private protocol SVGContainerElement : SVGDrawable {
   var children : [SVGElement] { get mutating set }
 }
 
-protocol PresentationElement : SVGElement {
+private protocol SVGPresentationElement : SVGElement {
   // All elements are:
   //‘alignment-baseline’, ‘baseline-shift’, ‘clip’, ‘clip-path’, ‘clip-rule’, ‘color’, ‘color-interpolation’, ‘color-interpolation-filters’, ‘color-profile’, ‘color-rendering’, ‘cursor’, ‘direction’, ‘display’, ‘dominant-baseline’, ‘enable-background’, ‘fill’, ‘fill-opacity’, ‘fill-rule’, ‘filter’, ‘flood-color’, ‘flood-opacity’, ‘font-family’, ‘font-size’, ‘font-size-adjust’, ‘font-stretch’, ‘font-style’, ‘font-variant’, ‘font-weight’, ‘glyph-orientation-horizontal’, ‘glyph-orientation-vertical’, ‘image-rendering’, ‘kerning’, ‘letter-spacing’, ‘lighting-color’, ‘marker-end’, ‘marker-mid’, ‘marker-start’, ‘mask’, ‘opacity’, ‘overflow’, ‘pointer-events’, ‘shape-rendering’, ‘stop-color’, ‘stop-opacity’, ‘stroke’, ‘stroke-dasharray’, ‘stroke-dashoffset’, ‘stroke-linecap’, ‘stroke-linejoin’, ‘stroke-miterlimit’, ‘stroke-opacity’, ‘stroke-width’, ‘text-anchor’, ‘text-decoration’, ‘text-rendering’, ‘unicode-bidi’, ‘visibility’, ‘word-spacing’, ‘writing-mode’
   var fill : Paint? { get }
@@ -264,7 +253,7 @@ protocol PresentationElement : SVGElement {
 
 // MARK: SVG protocol implementation extensions
 
-extension PresentationElement {
+private extension SVGPresentationElement {
   var display : String {
     return (attributes["display"] ?? "") as? String ?? "inline"
   }
@@ -274,21 +263,7 @@ extension PresentationElement {
   var miterLimit : Float { return Float(attributes["stroke-miterlimit"] as? String ?? "4")! }
 }
 
-extension CGRect {
-  func transformedBoundingBox(transform: SVGMatrix) -> CGRect {
-    let points = [
-      CGPointMake(minX, minY),
-      CGPointMake(minX, maxY),
-      CGPointMake(maxX, minY),
-      CGPointMake(maxX, maxY)
-    ]
-    let transformed = points.map({transform * $0})
-    let newRect = transformed.reduce(nil, combine: {$0 ∪? $1})
-    return newRect!
-  }
-}
-
-extension ContainerElement {
+private extension SVGContainerElement {
   var boundingBox : CGRect? {
     // Unify all the child bounding boxes
     var boundingBox : CGRect? = nil
@@ -303,12 +278,12 @@ extension ContainerElement {
   }
   
   func drawToContext(context: CGContextRef) {
-    if let drawable = self as? PresentationElement where drawable.display == "none" {
+    if let drawable = self as? SVGPresentationElement where drawable.display == "none" {
       return
     }
     // Loop over all children and draw
     for child in children.filter({ $0 is SVGDrawable }).map({ $0 as! SVGDrawable }) {
-      if let pres = child as? PresentationElement {
+      if let pres = child as? SVGPresentationElement {
         if pres.isInvisible() { continue }
       }
       CGContextSaveGState(context)
@@ -317,19 +292,11 @@ extension ContainerElement {
       // Draw the child
       child.drawToContext(context)
       CGContextRestoreGState(context)
-      
-//      // Draw the transformed bounding box
-//      let rBB = child.boundingBox!.transformedBoundingBox(child.transform)
-//      CGContextAddRect(context, rBB)
-//      CGContextSetStrokeColorWithColor(context, CGColor.Black)
-//      CGContextSetLineWidth(context, 1)
-//      CGContextDrawPath(context, .Stroke)
-      
     }
   }
 }
 
-extension SVGTransformable {
+private extension SVGTransformable {
   var transform : SVGMatrix { return attributes["transform"] as? SVGMatrix ?? SVGMatrix.Identity }
 }
 // Transformable: √ ‘circle’ ‘ellipse’,‘line’, ‘path’, ‘polygon’, ‘polyline’, ‘rect’, ‘g’,
@@ -338,14 +305,14 @@ extension SVGTransformable {
 // MARK: SVG Class implementations
 
 // The base class for any physical elements
-class SVGElementBase : SVGElement {
+private class SVGElementBase : SVGElement {
   var id : String? { return attributes["id"] as? String }
   var attributes : [String : Any] = [:]
   var sourceLine : UInt = 0
 }
 
 /// Used for unknown elements encountered whilst parsing
-class SVGUnknownElement : SVGElementBase {
+private class SVGUnknownElement : SVGElementBase {
   var tag : String
   init(name : String) {
     tag = name
@@ -353,12 +320,12 @@ class SVGUnknownElement : SVGElementBase {
 }
 
 /// An SVG element that can contain other SVG elements. For e.g. svg, g, defs
-class SVGGroup : SVGElementBase, ContainerElement, SVGDrawable, SVGTransformable {
+private class SVGGroup : SVGElementBase, SVGContainerElement, SVGDrawable, SVGTransformable {
   var children : [SVGElement] = []
 }
 
 /// The root element of any SVG file
-class SVGContainer : SVGElementBase, ContainerElement {
+private class SVGContainer : SVGElementBase, SVGContainerElement {
   var children : [SVGElement] = []
   private var idMap : [String : SVGElement] = [:]
   
@@ -377,7 +344,7 @@ class SVGContainer : SVGElementBase, ContainerElement {
 }
 
 /// Generic base class for handling path objects
-class Path : SVGElementBase, SVGDrawable, PresentationElement, SVGTransformable {
+private class Path : SVGElementBase, SVGDrawable, SVGPresentationElement, SVGTransformable {
   var d : [PathInstruction] {
     return attributes["d"] as? [PathInstruction] ?? []
   }
@@ -430,7 +397,7 @@ class Path : SVGElementBase, SVGDrawable, PresentationElement, SVGTransformable 
 }
 
 /// Represents a circle element in the SVG file
-class Circle : Path {
+private class Circle : Path {
   var radius : CGFloat { return CGFloat((attributes["r"] as? Length)?.value ?? 0) }
   var center : CGPoint {
     let x = attributes["cx"] as? Length
@@ -450,7 +417,7 @@ class Circle : Path {
   }
 }
 
-class Line : Path {
+private class Line : Path {
   var start : CGPoint {
     let x = attributes["x1"] as? Length
     let y = attributes["y1"] as? Length
@@ -474,7 +441,7 @@ class Line : Path {
   }
 }
 
-class Polygon : Path {
+private class Polygon : Path {
   var points : [CGPoint] {
     return attributes["points"] as? [CGPoint] ?? []
   }
@@ -486,8 +453,6 @@ class Polygon : Path {
   }
   
   override var boundingBox : CGRect? {
-    // Work out the maximum miter extent
-//    miterLength / stroke-width = 1 / sin ( theta / 2 )
     // Make a list of lines
     var maxMiter = strokeWidth.value
     // Only calculate miter if we have a stroke
@@ -515,7 +480,7 @@ class Polygon : Path {
   }
 }
 
-class Rect : Path {
+private class Rect : Path {
   var rect : CGRect {
     let x = attributes["x"] as? Length
     let y = attributes["y"] as? Length
@@ -535,7 +500,7 @@ class Rect : Path {
   }
 }
 
-class Ellipse : Path {
+private class Ellipse : Path {
   override func drawToContext(context: CGContextRef) {
     fatalError()
   }
@@ -544,7 +509,7 @@ class Ellipse : Path {
   }
 }
 
-class PolyLine : Path {
+private class PolyLine : Path {
   var points : [CGPoint] {
     return attributes["points"] as? [CGPoint] ?? []
   }
@@ -561,8 +526,8 @@ class PolyLine : Path {
   }
 }
 
-/// Extension to handle stroke and fill for any PresentationElement objects
-extension PresentationElement {
+/// Extension to handle stroke and fill for any SVGPresentationElement objects
+private extension SVGPresentationElement {
   var hasStroke : Bool {
     return (stroke ?? .None)  != .None && strokeWidth.value != 0
   }
@@ -615,7 +580,7 @@ extension PresentationElement {
 // MARK: General XML parsing functions
 
 /// Handles information about an SVG length elements
-struct Length : FloatLiteralConvertible, IntegerLiteralConvertible {
+private struct Length : FloatLiteralConvertible, IntegerLiteralConvertible {
   enum LengthUnit : String {
     case Unspecified
     case em = "em"
@@ -643,14 +608,14 @@ struct Length : FloatLiteralConvertible, IntegerLiteralConvertible {
 }
 
 /// Handles entries for a painting entry type
-enum Paint : Equatable {
+private enum Paint : Equatable {
   case None
   case CurrentColor
   case Color(CGColor)
   case Inherit
 }
 
-func ==(a : Paint, b : Paint) -> Bool {
+private func ==(a : Paint, b : Paint) -> Bool {
   switch (a, b) {
   case (.None, .None):
     return true
@@ -665,7 +630,7 @@ func ==(a : Paint, b : Paint) -> Bool {
 }
 
 /// Parse a <length> entry
-func parseLength(entry : String) -> Any {
+private func parseLength(entry : String) -> Any {
   if entry.startIndex.distanceTo(entry.endIndex) >= 2 {
     let unitPos = entry.endIndex.advancedBy(-2)
     if let unit = Length.LengthUnit(rawValue: entry.substringFromIndex(unitPos)) {
@@ -676,7 +641,7 @@ func parseLength(entry : String) -> Any {
 }
 
 // Parse an SVG <paint> type
-func parsePaint(entry : String) -> Any {
+private func parsePaint(entry : String) -> Any {
   switch entry {
   case "none":
     return Paint.None
@@ -691,7 +656,7 @@ func parsePaint(entry : String) -> Any {
 }
 
 /// Parse the list of points from a polygon/polyline entry
-func parseListOfPoints(entry : String) -> Any {
+private func parseListOfPoints(entry : String) -> Any {
   // Split by all commas and whitespace, then group into coords of two floats
   let entry = entry.stringByTrimmingCharactersInSet(NSCharacterSet.whitespaceAndNewlineCharacterSet())
   let separating = NSMutableCharacterSet.whitespaceAndNewlineCharacterSet()
@@ -701,10 +666,10 @@ func parseListOfPoints(entry : String) -> Any {
 }
 
 
-let transformFunction = Regex(pattern: "\\s*(\\w+)\\s*\\(([^)]*)\\)\\s*,?\\s*")
-let transformArgumentSplitter = Regex(pattern: "\\s*([^\\s),]+)")
+private let transformFunction = Regex(pattern: "\\s*(\\w+)\\s*\\(([^)]*)\\)\\s*,?\\s*")
+private let transformArgumentSplitter = Regex(pattern: "\\s*([^\\s),]+)")
 
-func parseTransform(entry: String) -> Any {
+private func parseTransform(entry: String) -> Any {
   if entry.isEmpty {
     return SVGMatrix.Identity
   }
@@ -759,7 +724,7 @@ func parseTransform(entry: String) -> Any {
 }
 
 /// Main XML Parser
-class Parser : NSObject, NSXMLParserDelegate {
+internal class SVGParser : NSObject, NSXMLParserDelegate {
   
   var parser : NSXMLParser
   var elements : [SVGElement] = []
@@ -799,7 +764,7 @@ class Parser : NSObject, NSXMLParserDelegate {
         element.attributes[key] = value
       }
     }
-    if var ce = elements.last as? ContainerElement {
+    if var ce = elements.last as? SVGContainerElement {
       ce.children.append(element)
     }
     
@@ -821,10 +786,10 @@ class Parser : NSObject, NSXMLParserDelegate {
 
 // MARK: Path parsing
 
-let pathSplitter = Regex(pattern: "([a-zA-z])([^a-df-zA-DF-Z]*)")
-let pathArgSplitter = Regex(pattern: "([+-]?\\d*\\.?\\d*(?:[eE][+-]?\\d+)?)\\s*,?\\s*")
+private let pathSplitter = Regex(pattern: "([a-zA-z])([^a-df-zA-DF-Z]*)")
+private let pathArgSplitter = Regex(pattern: "([+-]?\\d*\\.?\\d*(?:[eE][+-]?\\d+)?)\\s*,?\\s*")
 
-enum PathInstruction {
+private enum PathInstruction {
   case ClosePath
   case MoveTo(CGPoint)
   case LineTo(CGPoint)
@@ -838,7 +803,7 @@ enum PathInstruction {
 }
 
 /// Convert an even list of floats to CGPoints
-func floatsToPoints(data: [Float]) -> [CGPoint] {
+private func floatsToPoints(data: [Float]) -> [CGPoint] {
   guard data.count % 2 == 0 else {
     fatalError()
   }
@@ -849,7 +814,7 @@ func floatsToPoints(data: [Float]) -> [CGPoint] {
   return out
 }
 
-func parsePath(data: String) -> Any { // -> [PathInstruction]
+private func parsePath(data: String) -> Any { // -> [PathInstruction]
   var commands : [PathInstruction] = []
   // The point for the start of the current subpath
   var currentSubpathStart : CGPoint = CGPoint(x: 0, y: 0)
@@ -922,7 +887,7 @@ func parsePath(data: String) -> Any { // -> [PathInstruction]
 
 // MARK: Various Errata and extensions
 
-extension Array {
+private extension Array {
   func groupByStride(stride : Int) -> [[Generator.Element]] {
     var grouped : [[Generator.Element]] = []
     for var i = 0; i <= self.count-stride; i += stride {
@@ -939,7 +904,7 @@ private extension CGColor {
   
 }
 
-extension CGRect {
+private extension CGRect {
   init(x : Float, y: Float, width: Float, height: Float) {
     self.init(x: CGFloat(x), y: CGFloat(y), width: CGFloat(width), height: CGFloat(height))
   }
@@ -951,29 +916,29 @@ extension CGRect {
 infix operator ∪ { associativity left }
 infix operator ∪? { associativity left }
 
-func ∪(left: CGRect, right: CGRect) -> CGRect {
+private func ∪(left: CGRect, right: CGRect) -> CGRect {
   return CGRectUnion(left, right)
 }
-func ∪(left: CGRect, right: CGPoint) -> CGRect {
+private func ∪(left: CGRect, right: CGPoint) -> CGRect {
   return CGRectUnion(left, CGRectMake(right.x, right.y, 0, 0))
 }
-func ∪(right: CGPoint, left: CGRect) -> CGRect {
+private func ∪(right: CGPoint, left: CGRect) -> CGRect {
   return CGRectUnion(left, CGRectMake(right.x, right.y, 0, 0))
 }
-func ∪?(left: CGRect?, right: CGRect?) -> CGRect? {
+private func ∪?(left: CGRect?, right: CGRect?) -> CGRect? {
   guard left != nil || right != nil else {
     return nil
   }
   return CGRectUnion(left ?? right!, right ?? left!)
 }
-func ∪?(left: CGRect?, right: CGPoint) -> CGRect? {
+private func ∪?(left: CGRect?, right: CGPoint) -> CGRect? {
   let rRect = CGRectMake(right.x, right.y, 0, 0)
   guard let l = left else {
     return rRect
   }
   return CGRectUnion(l, rRect)
 }
-func ∪?(right: CGPoint, left: CGRect?) -> CGRect? {
+private func ∪?(right: CGPoint, left: CGRect?) -> CGRect? {
   let rRect = CGRectMake(right.x, right.y, 0, 0)
   guard let l = left else {
     return rRect
@@ -981,18 +946,18 @@ func ∪?(right: CGPoint, left: CGRect?) -> CGRect? {
   return CGRectUnion(l, rRect)
 }
 
-extension CGPoint {
+private extension CGPoint {
   init(x: Float, y: Float) {
     self.init(x: CGFloat(x), y: CGFloat(y))
   }
 }
 
-func +(left: CGPoint, right: CGPoint) -> CGPoint {
+private func +(left: CGPoint, right: CGPoint) -> CGPoint {
   return CGPointMake(left.x + right.x, left.y + right.y)
 }
 
 
-struct Match {
+private struct Match {
   var groups : [String]
   var result : NSTextCheckingResult
   
@@ -1013,7 +978,7 @@ struct Match {
   var range : NSRange { return result.range }
 }
 
-class Regex {
+private class Regex {
   let re : NSRegularExpression
   init(pattern: String) {
     re = try! NSRegularExpression(pattern: pattern, options: NSRegularExpressionOptions())
@@ -1031,19 +996,20 @@ class Regex {
   }
 }
 
-extension String {
+private extension String {
   func substringWithRange(range : NSRange) -> String {
     let nss = self as NSString
     return nss.substringWithRange(range)
   }
 }
 
-
-extension SVGMatrix : CustomStringConvertible, CustomDebugStringConvertible {
-  static var Identity : SVGMatrix { return GLKMatrix3Identity }
-  
+extension GLKMatrix3 : CustomStringConvertible, CustomDebugStringConvertible {
   public var description : String { return NSStringFromGLKMatrix3(self) }
   public var debugDescription : String { return description }
+}
+
+private extension SVGMatrix {
+  static var Identity : SVGMatrix { return GLKMatrix3Identity }
   
   init(a: Float, b: Float, c: Float, d: Float, e: Float, f: Float) {
     self = GLKMatrix3Make(a, b, 0, c, d, 0, e, f, 1)
@@ -1071,17 +1037,61 @@ extension SVGMatrix : CustomStringConvertible, CustomDebugStringConvertible {
     return CGAffineTransformMake(CGFloat(m00), CGFloat(m01), CGFloat(m10), CGFloat(m11), CGFloat(m20), CGFloat(m21))
   }
 }
-func *(left: SVGMatrix, right: SVGMatrix) -> SVGMatrix {
+private func *(left: SVGMatrix, right: SVGMatrix) -> SVGMatrix {
   return GLKMatrix3Multiply(left, right)
 }
-func *(left: SVGMatrix, right: GLKVector3) -> GLKVector3 {
+private func *(left: SVGMatrix, right: GLKVector3) -> GLKVector3 {
   return GLKMatrix3MultiplyVector3(left, right)
 }
-func *(left: SVGMatrix, right: CGPoint) -> CGPoint {
+private func *(left: SVGMatrix, right: CGPoint) -> CGPoint {
   let v3 = GLKVector3Make(Float(right.x), Float(right.y), 1)
   let tx = GLKMatrix3MultiplyVector3(left, v3)
   return CGPointMake(CGFloat(tx.x), CGFloat(tx.y))
 }
-func *=(inout left: SVGMatrix, right: SVGMatrix) {
+private func *=(inout left: SVGMatrix, right: SVGMatrix) {
   left = left * right
+}
+
+
+private extension CGRect {
+  func transformedBoundingBox(transform: SVGMatrix) -> CGRect {
+    let points = [
+      CGPointMake(minX, minY),
+      CGPointMake(minX, maxY),
+      CGPointMake(maxX, minY),
+      CGPointMake(maxX, maxY)
+    ]
+    let transformed = points.map({transform * $0})
+    let newRect = transformed.reduce(nil, combine: {$0 ∪? $1})
+    return newRect!
+  }
+}
+
+private func *(left: CGPoint, right: CGFloat) -> CGPoint {
+  return CGPointMake(left.x*right, left.y*right)
+}
+private func -(left: CGPoint, right: CGPoint) -> CGPoint {
+  return CGPointMake(left.x-right.x, left.y-right.y)
+}
+private func CGPointAsVectorLength(pt: CGPoint) -> CGFloat {
+  return sqrt(pt.x*pt.x + pt.y*pt.y)
+}
+
+infix operator • {associativity left precedence 140}
+postfix operator ⟂ {}
+
+private func •(left: CGPoint, right: CGPoint) -> CGFloat {
+  return left.x*right.x + left.y*right.y
+}
+
+private func CGPointPerpendicular(of: CGPoint) -> CGPoint {
+  return CGPointMake(of.y, -of.x)
+}
+
+private postfix func ⟂(of: CGPoint) -> CGPoint {
+  return CGPointMake(of.y, -of.x)
+}
+
+private func CGPointNormalize(pt: CGPoint) -> CGPoint {
+  return CGPointMake(pt.x / sqrt(pt•pt), pt.y / sqrt(pt•pt))
 }

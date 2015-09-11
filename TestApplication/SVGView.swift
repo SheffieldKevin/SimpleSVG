@@ -21,7 +21,6 @@ class SVGView : UIView {
     }
     if let context = UIGraphicsGetCurrentContext() {
       svgFile?.drawIdFittedToRect(context, id: "Prograde", rect: CGRectMake(0, 0, 256, 256))
-      svgFile?.drawIdToContext(context, id: "Prograde")
       svgFile?.drawToContext(context)
     }
   }
