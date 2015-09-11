@@ -37,13 +37,34 @@ public class SVGImage {
   
   public func drawToContext(context : CGContextRef) {
     svg.drawToContext(context)
-    let boundingBox = svg.boundingBox
+//    let boundingBox = svg.boundingBox
   }
   
   public func drawIdToContext(context : CGContextRef, id : String) {
     let elem = svg.findWithID(id)
-    let boundingBox = elem?.boundingBox
+//    CGContextSaveGState(context)
+//    CGContextConcatCTM(context, transform.affine)
     elem?.drawToContext(context)
+//    CGContextRestoreGState(context)
+  }
+  
+  // Draw an element with a specific ID, aligned and sized to fit a specific context
+  public func drawIdFittedToRect(context : CGContextRef, id : String, rect: CGRect) {
+    guard let elem = svg.findWithID(id) else {
+      fatalError()
+    }
+    if rect.minX != 0 || rect.minY != 0 {
+      fatalError("Currently incorrect transform with nonzero mins")
+    }
+    let bounds = elem.boundingBox!
+    // Work out position and scale to fit this bounding box inside the specified
+    let scale = min(rect.width/bounds.width, rect.height/bounds.height)
+    CGContextSaveGState(context)
+    CGContextScaleCTM(context, scale, scale)
+    let offset = CGPointMake(rect.minX-bounds.minX, rect.minY-bounds.minY)
+    CGContextTranslateCTM(context, offset.x, offset.y)
+    elem.drawToContext(context)
+    CGContextRestoreGState(context)
   }
 }
 
