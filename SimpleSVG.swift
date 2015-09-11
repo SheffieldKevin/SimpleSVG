@@ -663,8 +663,8 @@ private func parseListOfPoints(entry : String) -> Any {
 }
 
 
-private let transformFunction = Regex(pattern: "\\s*(\\w+)\\s*\\(([^)]*)\\)\\s*,?\\s*")
-private let transformArgumentSplitter = Regex(pattern: "\\s*([^\\s),]+)")
+private let transformFunction = SVGRegex(pattern: "\\s*(\\w+)\\s*\\(([^)]*)\\)\\s*,?\\s*")
+private let transformArgumentSplitter = SVGRegex(pattern: "\\s*([^\\s),]+)")
 
 private func parseTransform(entry: String) -> Any {
   if entry.isEmpty {
@@ -783,8 +783,8 @@ internal class SVGParser : NSObject, NSXMLParserDelegate {
 
 // MARK: Path parsing
 
-private let pathSplitter = Regex(pattern: "([a-zA-z])([^a-df-zA-DF-Z]*)")
-private let pathArgSplitter = Regex(pattern: "([+-]?\\d*\\.?\\d*(?:[eE][+-]?\\d+)?)\\s*,?\\s*")
+private let pathSplitter = SVGRegex(pattern: "([a-zA-z])([^a-df-zA-DF-Z]*)")
+private let pathArgSplitter = SVGRegex(pattern: "([+-]?\\d*\\.?\\d*(?:[eE][+-]?\\d+)?)\\s*,?\\s*")
 
 private enum PathInstruction {
   case ClosePath
@@ -953,8 +953,7 @@ private func +(left: CGPoint, right: CGPoint) -> CGPoint {
   return CGPointMake(left.x + right.x, left.y + right.y)
 }
 
-
-private struct Match {
+private struct SVGRegexMatch {
   var groups : [String]
   var result : NSTextCheckingResult
   
@@ -975,21 +974,21 @@ private struct Match {
   var range : NSRange { return result.range }
 }
 
-private class Regex {
+private class SVGRegex {
   let re : NSRegularExpression
   init(pattern: String) {
     re = try! NSRegularExpression(pattern: pattern, options: NSRegularExpressionOptions())
   }
-  func firstMatchInString(string : String) -> Match? {
+  func firstMatchInString(string : String) -> SVGRegexMatch? {
     let nss = string as NSString
     if let tr = re.firstMatchInString(string, options: NSMatchingOptions(), range: NSRange(location: 0, length: nss.length)) {
-      return Match(string: string, result: tr)
+      return SVGRegexMatch(string: string, result: tr)
     }
     return nil
   }
-  func matchesInString(string : String) -> [Match] {
+  func matchesInString(string : String) -> [SVGRegexMatch] {
     let nsS = string as NSString
-    return re.matchesInString(string, options: NSMatchingOptions(), range: NSRange(location: 0, length: nsS.length)).map { Match(string: string, result: $0) }
+    return re.matchesInString(string, options: NSMatchingOptions(), range: NSRange(location: 0, length: nsS.length)).map { SVGRegexMatch(string: string, result: $0) }
   }
 }
 
@@ -1048,7 +1047,6 @@ private func *(left: SVGMatrix, right: CGPoint) -> CGPoint {
 private func *=(inout left: SVGMatrix, right: SVGMatrix) {
   left = left * right
 }
-
 
 private extension CGRect {
   func transformedBoundingBox(transform: SVGMatrix) -> CGRect {
