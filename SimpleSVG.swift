@@ -297,12 +297,12 @@ extension ContainerElement {
       child.drawToContext(context)
       CGContextRestoreGState(context)
       
-      // Draw the transformed bounding box
-      let rBB = child.boundingBox!.transformedBoundingBox(child.transform)
-      CGContextAddRect(context, rBB)
-      CGContextSetStrokeColorWithColor(context, CGColor.Black)
-      CGContextSetLineWidth(context, 1)
-      CGContextDrawPath(context, .Stroke)
+//      // Draw the transformed bounding box
+//      let rBB = child.boundingBox!.transformedBoundingBox(child.transform)
+//      CGContextAddRect(context, rBB)
+//      CGContextSetStrokeColorWithColor(context, CGColor.Black)
+//      CGContextSetLineWidth(context, 1)
+//      CGContextDrawPath(context, .Stroke)
       
     }
   }
