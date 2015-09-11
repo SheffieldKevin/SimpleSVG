@@ -20,8 +20,8 @@ class SVGView : UIView {
 //      svgFile?.renderToTriangles()
     }
     if let context = UIGraphicsGetCurrentContext() {
-      svgFile?.drawIdFittedToRect(context, id: "Prograde", rect: CGRectMake(0, 0, 256, 256))
-      svgFile?.drawToContext(context)
+      try! svgFile?.drawToContextRect(context, rect: CGRectMake(0, 0, 256, 256), subId: "Prograde")
+      try! svgFile?.drawToContext(context)
     }
   }
   

@@ -24,6 +24,10 @@ import GLKit
 
 typealias SVGMatrix = GLKMatrix3
 
+enum SVGErrors : ErrorType {
+  case NoSuchElement
+}
+
 /// The public face of the module. Loads an SVGFile and has options for rendering
 public class SVGImage {
   private let svg : SVGContainer
@@ -35,27 +39,51 @@ public class SVGImage {
     svg = parser.parse() as! SVGContainer
   }
   
-  public func drawToContext(context : CGContextRef) {
-    svg.drawToContext(context)
+  public func drawToContext(context : CGContextRef, subId: String = "") throws {
+    let drawingElement : SVGDrawable
+    if subId.isEmpty {
+      drawingElement = svg
+    } else if let subElem = svg.findWithID(subId) {
+      drawingElement = subElem
+    } else {
+      throw SVGErrors.NoSuchElement
+    }
+    drawingElement.drawToContext(context)
+  }
+  
+  private func getElement(id: String) throws -> SVGDrawable {
+    let drawingElement : SVGDrawable
+    if id.isEmpty {
+      drawingElement = svg
+    } else if let subElem = svg.findWithID(id) {
+      drawingElement = subElem
+    } else {
+      throw SVGErrors.NoSuchElement
+    }
+    return drawingElement
   }
   
   // Draw an element with a specific ID, aligned and sized to fit a specific context
-  public func drawIdFittedToRect(context : CGContextRef, id : String, rect: CGRect) {
-    guard let elem = svg.findWithID(id) else {
-      fatalError()
-    }
+  public func drawToContextRect(context : CGContextRef, rect: CGRect, subId: String = "") throws {
+    let drawingElement = try getElement(subId)
+
     if rect.minX != 0 || rect.minY != 0 {
       fatalError("Currently incorrect transform with nonzero mins")
     }
-    let bounds = elem.boundingBox!
+    let bounds = drawingElement.boundingBox!
     // Work out position and scale to fit this bounding box inside the specified
     let scale = min(rect.width/bounds.width, rect.height/bounds.height)
     CGContextSaveGState(context)
     CGContextScaleCTM(context, scale, scale)
     let offset = CGPointMake(rect.minX-bounds.minX, rect.minY-bounds.minY)
     CGContextTranslateCTM(context, offset.x, offset.y)
-    elem.drawToContext(context)
+    drawingElement.drawToContext(context)
     CGContextRestoreGState(context)
+  }
+  
+  public func bounds(subId: String = "") throws -> CGRect {
+    let drawingElement = try getElement(subId)
+    return drawingElement.boundingBox ?? CGRectMake(0, 0, 0, 0)
   }
 }
 
