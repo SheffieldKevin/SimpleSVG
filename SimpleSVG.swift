@@ -74,15 +74,15 @@ private let dataTypesForAttributeNames : [String:[String]] = [
 
 /// Which SVG entity to create for a particular XML tag name
 private let tagCreationMap : [String : () -> SVGElement] = [
-  "svg": { SVGContainer() },
-  "g"  : { SVGGroup() },
-  "circle": { Circle() },
-  "line": { Line() },
-  "polygon": { Polygon() },
-  "ellipse": { Ellipse() },
-  "rect": { Rect() },
-  "polyline": { PolyLine() },
-  "path": { Path() },
+  "svg": { SVGContainer() as SVGElement},
+  "g"  : { SVGGroup() as SVGElement},
+  "circle": { Circle() as SVGElement },
+  "line": { Line() as SVGElement },
+  "polygon": { Polygon() as SVGElement },
+  "ellipse": { Ellipse() as SVGElement },
+  "rect": { Rect() as SVGElement },
+  "polyline": { PolyLine() as SVGElement },
+  "path": { Path() as SVGElement },
 ]
 
 /// Get the parser conversion function for a particular element and attribute
@@ -237,14 +237,26 @@ extension ContainerElement {
   }
 }
 
-protocol PresentationElement {
+protocol PresentationElement : SVGElement {
   // All elements are:
   //‘alignment-baseline’, ‘baseline-shift’, ‘clip’, ‘clip-path’, ‘clip-rule’, ‘color’, ‘color-interpolation’, ‘color-interpolation-filters’, ‘color-profile’, ‘color-rendering’, ‘cursor’, ‘direction’, ‘display’, ‘dominant-baseline’, ‘enable-background’, ‘fill’, ‘fill-opacity’, ‘fill-rule’, ‘filter’, ‘flood-color’, ‘flood-opacity’, ‘font-family’, ‘font-size’, ‘font-size-adjust’, ‘font-stretch’, ‘font-style’, ‘font-variant’, ‘font-weight’, ‘glyph-orientation-horizontal’, ‘glyph-orientation-vertical’, ‘image-rendering’, ‘kerning’, ‘letter-spacing’, ‘lighting-color’, ‘marker-end’, ‘marker-mid’, ‘marker-start’, ‘mask’, ‘opacity’, ‘overflow’, ‘pointer-events’, ‘shape-rendering’, ‘stop-color’, ‘stop-opacity’, ‘stroke’, ‘stroke-dasharray’, ‘stroke-dashoffset’, ‘stroke-linecap’, ‘stroke-linejoin’, ‘stroke-miterlimit’, ‘stroke-opacity’, ‘stroke-width’, ‘text-anchor’, ‘text-decoration’, ‘text-rendering’, ‘unicode-bidi’, ‘visibility’, ‘word-spacing’, ‘writing-mode’
   var fill : Paint? { get }
   var stroke : Paint? { get }
   var strokeWidth : Length { get }
   var miterLimit : Float { get }
+  var display : String { get }
 }
+
+extension PresentationElement {
+  var display : String {
+    return (attributes["display"] ?? "") as? String ?? "inline"
+  }
+  var fill : Paint? { return attributes["fill"] as? Paint }
+  var stroke : Paint? { return attributes["stroke"] as? Paint }
+  var strokeWidth : Length { return attributes["stroke-width"] as? Length ?? 1}
+  var miterLimit : Float { return Float(attributes["stroke-miterlimit"] as? String ?? "4")! }
+}
+
 
 // Basic SVG Protocols
 protocol SVGTransformable {
@@ -256,18 +268,24 @@ extension Path : SVGTransformable {
 extension SVGGroup : SVGTransformable {
   var transform : SVGMatrix { return attributes["transform"] as? SVGMatrix ?? SVGMatrix.Identity }
 }
-// Transformable: ‘circle’ ‘ellipse’,‘line’, ‘path’, ‘polygon’, ‘polyline’, ‘rect’, ‘g’,
+// Transformable: √ ‘circle’ ‘ellipse’,‘line’, ‘path’, ‘polygon’, ‘polyline’, ‘rect’, ‘g’,
 //‘a’, ‘clipPath’, ‘defs’, ‘foreignObject’, ‘image’,  ‘switch’, ‘text’, ‘use’
 
 // The base class for any physical elements
-class SVGElement {
+protocol SVGElement {
+  var id : String? { get }
+  var attributes : [String : Any] { get }
+  var sourceLine : UInt { get }
+}
+
+class SVGElementBase : SVGElement {
   var id : String? { return attributes["id"] as? String }
   var attributes : [String : Any] = [:]
   var sourceLine : UInt = 0
 }
 
 /// Used for unknown elements encountered whilst parsing
-class SVGUnknownElement : SVGElement {
+class SVGUnknownElement : SVGElementBase {
   var tag : String
   init(name : String) {
     tag = name
@@ -321,46 +339,11 @@ func *=(inout left: SVGMatrix, right: SVGMatrix) {
   left = left * right
 }
 
-/// An SVG element that can contain other SVG elements. For e.g. svg, g, defs
-class SVGGroup : SVGElement, ContainerElement, SVGDrawable {
-  var children : [SVGElement] = []
-  var display : String { return (attributes["display"] ?? "") as? String ?? "inline" }
-  var drawableChildren : [SVGDrawable] {
-    return children.filter({ $0 is SVGDrawable }).map({ $0 as! SVGDrawable })
-  }
+extension ContainerElement {
   func drawToContext(context: CGContextRef) {
-    if display == "none" { return }
-    
-    // Loop over all children and draw
-    for child in drawableChildren {
-      if let pres = child as? PresentationElement {
-        if pres.isInvisible() { continue }
-      }
-      CGContextSaveGState(context)
-      if let xf = child as? SVGTransformable {
-        CGContextConcatCTM(context, xf.transform.affine)
-      }
-      child.drawToContext(context)
-      CGContextRestoreGState(context)
+    if let drawable = self as? PresentationElement where drawable.display == "none" {
+        return
     }
-  }
-}
-
-/// The root element of any SVG file
-class SVGContainer : SVGElement, ContainerElement {
-  var children : [SVGElement] = []
-  private var idMap : [String : SVGElement] = [:]
-  
-  var width : Length {  return attributes["width"] as! Length }
-  var height : Length { return attributes["height"] as! Length }
-  
-  override init() {
-    super.init()
-    attributes["width"]  = Length(value: 100, unit: .pc)
-    attributes["height"] = Length(value: 100, unit: .pc)
-  }
-  
-  func drawToContext(context: CGContextRef) {
     // Loop over all children and draw
     for child in children.filter({ $0 is SVGDrawable }).map({ $0 as! SVGDrawable }) {
       if let pres = child as? PresentationElement {
@@ -374,6 +357,30 @@ class SVGContainer : SVGElement, ContainerElement {
       CGContextRestoreGState(context)
     }
   }
+}
+
+/// An SVG element that can contain other SVG elements. For e.g. svg, g, defs
+class SVGGroup : SVGElementBase, ContainerElement, SVGDrawable {
+  var children : [SVGElement] = []
+  var display : String { return (attributes["display"] ?? "") as? String ?? "inline" }
+  var drawableChildren : [SVGDrawable] {
+    return children.filter({ $0 is SVGDrawable }).map({ $0 as! SVGDrawable })
+  }
+}
+
+/// The root element of any SVG file
+class SVGContainer : SVGElementBase, ContainerElement {
+  var children : [SVGElement] = []
+  private var idMap : [String : SVGElement] = [:]
+  
+  var width : Length {  return attributes["width"] as! Length }
+  var height : Length { return attributes["height"] as! Length }
+  
+  override init() {
+    super.init()
+    attributes["width"]  = Length(value: 100, unit: .pc)
+    attributes["height"] = Length(value: 100, unit: .pc)
+  }
   
   func findWithID(id : String) -> SVGDrawable? {
     return idMap[id] as? SVGDrawable
@@ -381,20 +388,13 @@ class SVGContainer : SVGElement, ContainerElement {
 }
 
 /// Generic base class for handling path objects
-class Path : SVGElement, SVGDrawable, PresentationElement {
-  var fill : Paint? { return attributes["fill"] as? Paint }
-  var stroke : Paint? { return attributes["stroke"] as? Paint }
-  var strokeWidth : Length { return attributes["stroke-width"] as? Length ?? 1}
-  var miterLimit : Float { return Float(attributes["stroke-miterlimit"] as? String ?? "4")! }
-  
+class Path : SVGElementBase, SVGDrawable, PresentationElement {
   var d : [PathInstruction] {
     return attributes["d"] as? [PathInstruction] ?? []
   }
   
   func drawToContext(context : CGContextRef)
   {
-//    let subState = state.applyTransform(self.transform)
-
     guard d.count > 0 else {
       print("Warning: Path with no data from line \(sourceLine)")
       return
@@ -767,9 +767,9 @@ class Parser : NSObject, NSXMLParserDelegate {
   
   func parser(parser: NSXMLParser, didStartElement elementName: String, namespaceURI: String?, qualifiedName qName: String?, attributes attributeDict: [String : String])
   {
-    let element : SVGElement
+    let element : SVGElementBase
     if let creator = tagCreationMap[elementName] {
-      element = creator()
+      element = creator() as! SVGElementBase
     } else {
       element = SVGUnknownElement(name: elementName)
     }
