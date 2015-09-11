@@ -536,9 +536,6 @@ private extension SVGPresentationElement {
   }
   
   func isInvisible() -> Bool {
-//    let hasStroke = (stroke ?? .None)  != .None && strokeWidth.value != 0
-//    let hasFill =   (fill ?? .Inherit) != .None
-//    
     if hasStroke || hasFill {
       return false
     }
